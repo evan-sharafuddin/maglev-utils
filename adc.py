@@ -30,11 +30,36 @@ def readadc(adcnum):  # read out the ADC
 
     return adcout
 
+sum = 0
+sum_cnt = 0
+
+t = time.time()
+GPIO.setmode(GPIO.BOARD)
+p = 40
+ison=False
+GPIO.setup(p,GPIO.OUT)
+GPIO.output(p, 0)
+
+
+while True:
+    sum += readadc(0)
+    sum_cnt += 1
+    
+    if time.time() - t > 0.01:
+        t = time.time()
+        GPIO.output(p, 0 if ison else 1)
+        ison = not ison
+
+    if sum_cnt > 10000:
+        print(round(sum/sum_cnt))
+        sum = 0
+        sum_cnt = 0
+
 # https://forums.raspberrypi.com/viewtopic.php?t=272035
 
-tic = time.time()
-arr = np.zeros(100000)
-c = 0
+#tic = time.time()
+#arr = np.zeros(100000)
+#c = 0
 
 # GPIO.setmode(GPIO.BOARD)
 # pin = 40
@@ -42,20 +67,20 @@ c = 0
 # ison = False
 # GPIO.output(pin, 1)
 
-while c < 100000:
+#while c < 100000:
     # if c % 10000 == 0:
     #     GPIO.output(pin, 0 if ison else 1)
     #     ison = not ison
 
-    arr[c] = readadc(1)
-    c += 1
+ #   arr[c] = readadc(1)
+  #  c += 1
 
-toc = time.time()
+#toc = time.time()
 # GPIO.output(pin, 0)
 
-print(f"Total time: {toc-tic}")
+#print(f"Total time: {toc-tic}")
 
-plt.plot(arr)
-plt.savefig("test.png")
+#plt.plot(arr)
+#plt.savefig("test.png")
 
-# GPIO.cleanup()
+GPIO.cleanup()
