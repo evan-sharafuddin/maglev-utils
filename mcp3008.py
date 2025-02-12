@@ -29,3 +29,7 @@ class MCP3008:
         adcout = ((r[1] & 3) << 8) + r[2]
 
         return adcout
+
+    # filter ideas
+    # https://en.wikipedia.org/wiki/Median_filter
+    
