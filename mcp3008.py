@@ -2,7 +2,6 @@
 
 import time
 import spidev
-import matplotlib.pyplot as plt
 import numpy as np
 import RPi.GPIO as GPIO
 
