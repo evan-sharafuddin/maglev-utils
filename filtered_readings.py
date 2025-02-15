@@ -15,8 +15,14 @@ import random
 import sys
 from filters import Filters
 
+
 SUCCESS = 0 # standard normal exit code
-ERR = -1 # standard error exit code
+CHANNEL_NOT_INT = 1 
+CHANNEL_OUT_OF_BOUNDS = 2
+
+err = dict()
+err[CHANNEL_NOT_INT] = "ERROR: Invalid channels provided. Argument must be a set of integers. Aborting"
+err[CHANNEL_OUT_OF_BOUNDS] = "ERROR: Invalid channels provided. Channels must be between 0 and 7, inclusive. Aborting"
 
 # set up command line arguments
 msg = "Displays up to 8 ADC channel readings from MCP3008"
@@ -47,19 +53,16 @@ def main(stdscr):
         adc = mcp3008.MCP3008( Vdd_hi=args.vdd_hi ) # assuming 5 Vdd
 
     # parse channels between 0 and 7
-    print("bruH")
     channel_str = str(args.channel)
     try: 
         channel_list = [ int(c) for c in channel_str ]
     except ValueError:
         print("ERROR: Invalid channels provided. Argument must be a set of integers. Aborting", flush=True)
         sys.stdout.flush()
-        return
+        raise SystemExit(CHANNEL_NOT_INT)
     channel_list = [ d for d in channel_list if ( d >= 0 and d <= 7) ]
     if len(channel_list) == 0: 
-        print("ERROR: Invalid channels provided. Must be integers between 0 and 7. Aborting", flush=True)
-        sys.stdout.flush()
-        return
+        raise SystemExit(CHANNEL_OUT_OF_BOUNDS)
 
     # extract sampling parameters
     sample_period = 1 / args.sps
@@ -153,6 +156,15 @@ def main(stdscr):
         data_win.refresh()
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    
+    try:
+        curses.wrapper(main)
+
+    # must print error messages outside of the curses wrapper
+    except SystemExit as e:
+        print(err[e.code])
+
+    except Exception as e:
+        print(f"An error occured: {str(e)}")
 
    
