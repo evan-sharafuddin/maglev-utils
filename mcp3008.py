@@ -1,15 +1,11 @@
-# based off of https://learn.sparkfun.com/tutorials/raspberry-pi-spi-and-i2c-tutorial/all
 
-import time
+
 import spidev
-import numpy as np
-import RPi.GPIO as GPIO
-
 
 class MCP3008:
     # define constants
     VDD_LO_CLK = 1.35e6 # maximum clock frequency for 3.3V operation
-    VDD_HI_CLK = 3.60e6 # maximum clock frequency for 5V operation
+    VDD_HI_CLK = 3.60e6 # maxicmum clock frequency for 5V operation
     MIN_CLK    = 50e3   # minimum clock frequency of 10 kHz for all Vdd, add a bit of buffer
     
     def __init__( self, Vdd_hi=False, bus=0, device=0, debug=False):
