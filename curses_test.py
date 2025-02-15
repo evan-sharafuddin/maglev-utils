@@ -1,3 +1,7 @@
+"""
+Old code used for testing the current sensor and PWM current controller
+"""
+
 import curses
 import time
 import mcp3008

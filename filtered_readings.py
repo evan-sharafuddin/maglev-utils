@@ -11,10 +11,9 @@ import time
 import mcp3008
 import argparse
 import atexit
-import math
+import random
+import sys
 from filters import Filters
-
-import RPi.GPIO as GPIO
 
 SUCCESS = 0 # standard normal exit code
 ERR = -1 # standard error exit code
@@ -29,7 +28,7 @@ parser.add_argument('-m', '--median_window', type=int, help="Size of median filt
 parser.add_argument('-s', '--sps', type=int, help="Sampling rate, in Hz (samples per second)")
 
 # MCP3008 arguments
-parser.add_argument('-c', '--channel', type=int, help="Channel numbers to use; each digit cooresponds to a channel (0-7)")
+parser.add_argument('-c', '--channel', type=str, help="Channel numbers to use; each digit cooresponds to a channel (0-7)")
 parser.add_argument('-v', '--vdd_hi', action='store_true', help="Enable when MCP3008 powered by 5V line")
 
 # misc arguments
@@ -38,29 +37,42 @@ parser.add_argument('-y', '--dummy', action='store_true', help="Enable this to t
 
 args = parser.parse_args()
 
+if not args.dummy:
+    import RPi.GPIO as GPIO
+
 def main(stdscr):
     
-    if not parser.dummy: 
+    if not args.dummy: 
         # initialize ADC
-        adc = mcp3008.MCP3008( Vdd_hi=parser.vdd_hi ) # assuming 5 Vdd
+        adc = mcp3008.MCP3008( Vdd_hi=args.vdd_hi ) # assuming 5 Vdd
 
     # parse channels between 0 and 7
-    channel_str = str(parser.channel)
-    channel_list = [ d for d in channel_str if ( d > 0 and d < 7 ) ]
+    print("bruH")
+    channel_str = str(args.channel)
+    try: 
+        channel_list = [ int(c) for c in channel_str ]
+    except ValueError:
+        print("ERROR: Invalid channels provided. Argument must be a set of integers. Aborting", flush=True)
+        sys.stdout.flush()
+        return
+    channel_list = [ d for d in channel_list if ( d >= 0 and d <= 7) ]
     if len(channel_list) == 0: 
-        print("ERROR: Invalid channels provided. Aborting")
-        exit(ERR)
+        print("ERROR: Invalid channels provided. Must be integers between 0 and 7. Aborting", flush=True)
+        sys.stdout.flush()
+        return
 
     # extract sampling parameters
-    sample_period = 1 / parser.sps
-    w_mean = parser.mean_window
-    w_median = parser.median_window
+    sample_period = 1 / args.sps
+    w_mean = args.mean_window
+    w_median = args.median_window
 
     # handle GPIO cleanup upon exit
-    def _close_pwm():
-        GPIO.cleanup()
-        print("Cleaned GPIO pins")
-    atexit.register(_close_pwm)
+    def _at_exit():
+        if not args.dummy:
+            GPIO.cleanup()
+            print("Cleaned GPIO pins")
+
+    atexit.register(_at_exit)
 
     # Initialize curses terminal
     curses.curs_set(0)  # Hide the cursor
@@ -78,6 +90,7 @@ def main(stdscr):
     
     # add info to info_win
     info_win.addstr(0, 0, "Press Ctrl-C to exit program")
+    if args.dummy: info_win.addstr(1, 0, "NOTE: dummy mode enabled")
     info_win.refresh()
     
     # loop through sampling until Ctrl-C signal
@@ -88,42 +101,44 @@ def main(stdscr):
         for c in channel_list:
             data[c] = list()
 
-        d_start = time.time()
+        d_start = time.perf_counter() # using perf counter here, had some issues with system clock
+                                      # returning incorrect values resulting in negative elapsed time
 
-        while time.time() - d_start < sample_period: # TODO need to check whether sample period is too small, this could result in errors
+        while time.perf_counter() - d_start < sample_period: # TODO need to check whether sample period is too small, this could result in errors
             for c in channel_list:
 
-                if parser.dummy:
-                    data[c].append( round(math.random()*1024) )
+                if args.dummy:
+                    data[c].append( round(random.random()*1024) )
                     # simulate some extra time
-                    time.sleep(0.01)
+                    time.sleep(0.001)
+
                 else:
                     data[c].append( adc.read(c) )
         
-        d_time = time.time() - d_start
+        d_time = time.perf_counter() - d_start
         d_cnt = len(data[channel_list[0]])
 
         # Filter data
-        f_start = time.time()
+        f_start = time.perf_counter()
 
         disp_dict = dict()
         for c in channel_list:
             disp_dict[c] = Filters.simple_mean(data[c])
 
-        f_time = time.time() - f_start
-
+        f_time = time.perf_counter() - f_start
 
         # Display data via curses
         # Clear screen to avoid overwriting previous content
         data_win.clear()
 
         # Create the text string
-        text = f"""Num samples (samles): {d_cnt}
-                   Sampling time (s)   : {d_time}
-                   Filtering time (s)  : {f_time}""" # TODO implicit \n here?
+        text = f"Num samples (samples)     : {d_cnt}\n" \
+               f"Sampling time (s)         : {d_time}\n" \
+               f"Filtering time (s)        : {f_time}\n"\
         
         for c in channel_list:
-            text += f"Channel {c} reading: {disp_dict}\n"
+            text += \
+               f"Channel {c} reading (0-1023): {disp_dict[c]}\n"
                    
         
         # BELOW: old code for calculating current reading from current esnsor
@@ -135,7 +150,7 @@ def main(stdscr):
         data_win.addstr(0, 0, text)
 
         # Update the screen
-        data_win.refrest()
+        data_win.refresh()
 
 if __name__ == "__main__":
     curses.wrapper(main)
