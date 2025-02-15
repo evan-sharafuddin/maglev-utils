@@ -15,7 +15,6 @@ import random
 import sys
 from filters import Filters
 
-
 SUCCESS = 0 # standard normal exit code
 CHANNEL_NOT_INT = 1 
 CHANNEL_OUT_OF_BOUNDS = 2
@@ -83,7 +82,7 @@ def main(stdscr):
     stdscr.timeout(100)  # Refresh every 100 ms
 
     height, width = stdscr.getmaxyx()
-    info_section_height = 3
+    info_section_height = 5
     data_section_height = height - info_section_height
 
     # Create a window for error messages (top part of the screen)
@@ -94,6 +93,7 @@ def main(stdscr):
     # add info to info_win
     info_win.addstr(0, 0, "Press Ctrl-C to exit program")
     if args.dummy: info_win.addstr(1, 0, "NOTE: dummy mode enabled")
+    info_win.addstr(3, 0, "-------")
     info_win.refresh()
     
     # loop through sampling until Ctrl-C signal
