@@ -40,6 +40,7 @@ parser.add_argument('-v', '--vdd_hi', action='store_true', help="Enable when MCP
 parser.add_argument('-d', '--debug', action='store_true', help="Enable debug messages")
 parser.add_argument('-y', '--dummy', action='store_true', help="Enable this to test code without RPi hardware")
 parser.add_argument('-p', '--pwm', action='store_true', help="Enable PWM output on pin 12")
+parser.add_argument('-f', '--file', action='store_true', help="Store data points in a file")
 
 args = parser.parse_args()
 
@@ -71,8 +72,8 @@ def main(stdscr):
 
     # setup PWM
     pwm_pin = 12
-    pwm_freq = 1000 # Hz
-    duty_cycle = 20 # percent
+    pwm_freq = 100 # Hz
+    duty_cycle = 100 # percent
 
     GPIO.setmode(GPIO.BOARD)
     GPIO.setmode(GPIO.BOARD)		#set pin numbering system
@@ -82,10 +83,11 @@ def main(stdscr):
 
     # handle GPIO cleanup upon exit
     def _at_exit():
-        pass # TODO nothing to do here for now
-        # if not args.dummy:
-        #     GPIO.cleanup()
-        #     print("Cleaned GPIO pins")
+        # pass
+        # TODO nothing to do here for now
+        if not args.dummy:
+            GPIO.cleanup()
+            print("Cleaned GPIO pins")
 
     atexit.register(_at_exit)
 
@@ -108,10 +110,18 @@ def main(stdscr):
     if args.dummy: info_win.addstr(1, 0, "NOTE: dummy mode enabled")
     info_win.addstr(3, 0, "-------")
     info_win.refresh()
+
+    # store file if command line argument set
+    if args.file:
+        f = [ str() for _ in range(len(channel_list)) ]
+        data = [ list() for _ in range(len(channel_list)) ]
+        t_list = list()
     
+    start  = time.time()
+
     # loop through sampling until Ctrl-C signal
+    # while time.time() - start < 5:
     while True:
-        
         # create dictionary to store data for each channel
         data = dict()
         for c in channel_list:
@@ -122,7 +132,7 @@ def main(stdscr):
 
         while time.perf_counter() - d_start < sample_period: # TODO need to check whether sample period is too small, this could result in errors
             for c in channel_list:
-
+                
                 if args.dummy:
                     data[c].append( round(random.random()*1024) )
                     # simulate some extra time
@@ -138,8 +148,15 @@ def main(stdscr):
         f_start = time.perf_counter()
 
         disp_dict = dict()
-        for c in channel_list:
+        for ii, c in enumerate(channel_list):
             disp_dict[c] = Filters.simple_mean(data[c])
+
+            if args.file:
+                data_point = f"{time.time() - start} {disp_dict[c]}\n"
+                f[ii] += data_point
+                data[ii].append(disp_dict[c])
+
+        if args.file: t_list.append(time.time() - start)
 
         f_time = time.perf_counter() - f_start
 
@@ -148,25 +165,34 @@ def main(stdscr):
         data_win.clear()
 
         # Create the text string
-        text = f"Num samples (samples)     : {d_cnt}\n" \
+        text = f"Num samples (samples)     : {d_cnt}\n"  \
                f"Sampling time (s)         : {d_time}\n" \
-               f"Filtering time (s)        : {f_time}\n"\
+               f"Filtering time (s)        : {f_time}\n" \
         
         for c in channel_list:
             text += \
-               f"Channel {c} reading (0-1023): {disp_dict[c]}\n"
-                   
-        
-        # BELOW: old code for calculating current reading from current esnsor
-        #    \nCurrent value: { ((reading * (pi_5v/1024)) - pi_5v/2) / 0.066}""" # 3.3 Pi voltage (TODO measure
-                                                                            # 0.066 mV/A
-                                                                            # 10 bit adc -- 1024
+               f"Channel {c} reading (0-1023): {disp_dict[c]}\n" \
+               f"Current value: { ((disp_dict[c] * (5/1024)) - 5/2) / 0.185}\n" # 3.3 Pi voltage (TODO measure
+                                                                                # 0.066 mV/A
+                                                                                # 10 bit adc -- 1024
+
 
         # Add the text to the window at position (1, 1)
         data_win.addstr(0, 0, text)
 
         # Update the screen
         data_win.refresh()
+
+
+    if args.file:
+        for ii, c in enumerate(channel_list):
+            file_path = f"./data/c{c}_data.txt"
+
+        with open(file_path, "w") as file:
+            file.write(f[ii])
+
+        
+
 
 if __name__ == "__main__":
     
