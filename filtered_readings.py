@@ -39,6 +39,7 @@ parser.add_argument('-v', '--vdd_hi', action='store_true', help="Enable when MCP
 # misc arguments
 parser.add_argument('-d', '--debug', action='store_true', help="Enable debug messages")
 parser.add_argument('-y', '--dummy', action='store_true', help="Enable this to test code without RPi hardware")
+parser.add_argument('-p', '--pwm', action='store_true', help="Enable PWM output on pin 12")
 
 args = parser.parse_args()
 
@@ -68,11 +69,23 @@ def main(stdscr):
     w_mean = args.mean_window
     w_median = args.median_window
 
+    # setup PWM
+    pwm_pin = 12
+    pwm_freq = 1000 # Hz
+    duty_cycle = 20 # percent
+
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setmode(GPIO.BOARD)		#set pin numbering system
+    GPIO.setup(pwm_pin, GPIO.OUT)
+    pi_pwm = GPIO.PWM(pwm_pin, pwm_freq)		#create PWM instance with frequency
+    pi_pwm.start(duty_cycle)				#start PWM of required Duty Cycle 
+
     # handle GPIO cleanup upon exit
     def _at_exit():
-        if not args.dummy:
-            GPIO.cleanup()
-            print("Cleaned GPIO pins")
+        pass # TODO nothing to do here for now
+        # if not args.dummy:
+        #     GPIO.cleanup()
+        #     print("Cleaned GPIO pins")
 
     atexit.register(_at_exit)
 
