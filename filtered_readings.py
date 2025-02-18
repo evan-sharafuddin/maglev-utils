@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser(description=msg)
 # sampling arguments
 parser.add_argument('-w', '--mean_window', type=int, help="Size of moving average window, in samples")
 parser.add_argument('-m', '--median_window', type=int, help="Size of median filter window, in samples")
-parser.add_argument('-s', '--sps', type=int, help="Sampling rate, in Hz (samples per second)")
+parser.add_argument('-s', '--sps', type=int, default=5, help="Sampling rate, in Hz (samples per second)")
 
 # MCP3008 arguments
 parser.add_argument('-c', '--channel', type=str, help="Channel numbers to use; each digit cooresponds to a channel (0-7)")
@@ -71,21 +71,20 @@ def main(stdscr):
     w_median = args.median_window
 
     # setup PWM
-    pwm_pin = 12
-    pwm_freq = 100 # Hz
-    duty_cycle = 100 # percent
-
-    GPIO.setmode(GPIO.BOARD)
-    GPIO.setmode(GPIO.BOARD)		#set pin numbering system
-    GPIO.setup(pwm_pin, GPIO.OUT)
-    pi_pwm = GPIO.PWM(pwm_pin, pwm_freq)		#create PWM instance with frequency
-    pi_pwm.start(duty_cycle)				#start PWM of required Duty Cycle 
+    if args.pwm:
+        pwm_pin = 12
+        pwm_freq = 100 # Hz
+        duty_cycle = 100 # percent
+        
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setmode(GPIO.BOARD)		#set pin numbering system
+        GPIO.setup(pwm_pin, GPIO.OUT)
+        pi_pwm = GPIO.PWM(pwm_pin, pwm_freq)		#create PWM instance with frequency
+        pi_pwm.start(duty_cycle)				#start PWM of required Duty Cycle 
 
     # handle GPIO cleanup upon exit
     def _at_exit():
-        # pass
-        # TODO nothing to do here for now
-        if not args.dummy:
+        if not args.dummy and args.pwm:
             GPIO.cleanup()
             print("Cleaned GPIO pins")
 
