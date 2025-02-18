@@ -1,7 +1,9 @@
-class hall_effect:
+import mcp3008
+import RPi.GPIO as GPIO
 
-    def __init__(self, 
-
-
-    def read(self,chan):
-
+adc=mcp3008.MCP3008(Vdd_hi=True)
+while(True):
+    out=adc.read(8)
+    print("ADC reading")
+    print(out)
+        
