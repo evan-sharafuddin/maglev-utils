@@ -8,7 +8,7 @@ class MCP3008:
     VDD_HI_CLK = 3.60e6 # maxicmum clock frequency for 5V operation
     MIN_CLK    = 50e3   # minimum clock frequency of 10 kHz for all Vdd, add a bit of buffer
     
-    def __init__( self, Vdd_hi=False, bus=0, device=0, debug=False):
+    def __init__( self, Vdd_hi=True, bus=0, device=0, debug=False):
         self.spi = spidev.SpiDev()
         self.spi.open(device, bus)
         self.spi.max_speed_hz = int( MCP3008.VDD_HI_CLK if Vdd_hi \

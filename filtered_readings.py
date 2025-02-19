@@ -14,6 +14,7 @@ import atexit
 import random
 import sys
 from filters import Filters
+from estimator import Estimator
 
 SUCCESS = 0 # standard normal exit code
 CHANNEL_NOT_INT = 1 
@@ -34,7 +35,7 @@ parser.add_argument('-s', '--sps', type=int, default=5, help="Sampling rate, in 
 
 # MCP3008 arguments
 parser.add_argument('-c', '--channel', type=str, help="Channel numbers to use; each digit cooresponds to a channel (0-7)")
-parser.add_argument('-v', '--vdd_hi', action='store_true', help="Enable when MCP3008 powered by 5V line")
+parser.add_argument('-v', '--vdd_lo', action='store_true', help="Enable when MCP3008 powered by 3.3V line")
 
 # misc arguments
 parser.add_argument('-d', '--debug', action='store_true', help="Enable debug messages")
@@ -51,7 +52,7 @@ def main(stdscr):
     
     if not args.dummy: 
         # initialize ADC
-        adc = mcp3008.MCP3008( Vdd_hi=args.vdd_hi ) # assuming 5 Vdd
+        adc = mcp3008.MCP3008( Vdd_hi=not args.vdd_lo )
 
     # parse channels between 0 and 7
     channel_str = str(args.channel)
