@@ -49,6 +49,9 @@ class Controller:
         
         if ctime == -1:
             print("Press Ctrl-C to exit control loop")
+	
+	#INITIAL CURRENT VALUE
+	current=99
 
         # enter control loop 
         while ctime == -1 or time.time() - tic < ctime: 
@@ -83,7 +86,10 @@ class Controller:
 
 
                     ### UPDATE CONTROL LOOP
-                    u = self.control_iter( x=val )
+                    dt=previous_time-time.perf_counter
+                    previous_time=time.perf_counter
+                    u = self.control_iter( x=val, dt )
+                    current = current + u
 
                     # add calculated input to buffer
                     input_buf[i] = u
@@ -113,10 +119,16 @@ class Controller:
 
     """Use to calculate the control input given a measured state"""
     def control_iter( self,
-                      x: float         
-    ) -> float:
+                      x: float, dt) -> float:
+	x_des=99;
+	Kp=10;
+	Ki = 0;
+	error=x_des-x
+	integral=error*dt+integral
+	#note that Kp, Ki have units of Amps/ADC reading 
+	current = Kp*error+Ki*integral           
         
-        return input
+        return current
     
         # TODO Izzy, implement controller calculations here
         # NOTE currently this function just returns the input
