@@ -88,8 +88,9 @@ class Controller:
                     ### UPDATE CONTROL LOOP
                     dt=previous_time-time.perf_counter
                     previous_time=time.perf_counter
-                    u = self.control_iter( x=val, dt )
-                    current = current + u
+                    current_change = self.control_iter( x=val, dt )
+                    current = current + current_change
+                    u = current
 
                     # add calculated input to buffer
                     input_buf[i] = u
