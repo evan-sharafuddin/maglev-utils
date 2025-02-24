@@ -50,8 +50,6 @@ class Controller:
         if ctime == -1:
             print("Press Ctrl-C to exit control loop")
 	
-	#INITIAL CURRENT VALUE
-	current=99
 
         # enter control loop 
         while ctime == -1 or time.time() - tic < ctime: 
@@ -88,9 +86,7 @@ class Controller:
                     ### UPDATE CONTROL LOOP
                     dt=previous_time-time.perf_counter
                     previous_time=time.perf_counter
-                    current_change = self.control_iter( x=val, dt )
-                    current = current + current_change
-                    u = current
+                    u = self.control_iter( x=val, dt )
 
                     # add calculated input to buffer
                     input_buf[i] = u
