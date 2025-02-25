@@ -14,7 +14,6 @@ import time
 from collections import deque
 import numpy as np
 
-
 @define 
 class Controller:
 
@@ -43,6 +42,7 @@ class Controller:
         window = deque(maxlen=self.window_size)
 
         tstart = time.time()
+	previous_time=time.time()
         tic =    tstart # buffer timing
 
         csleep /= 1e6 # convert to seconds
@@ -84,8 +84,8 @@ class Controller:
 
 
                     ### UPDATE CONTROL LOOP
-                    dt=previous_time-time.perf_counter
-                    previous_time=time.perf_counter
+                    dt=previous_time-time.time()
+                    previous_time=time.time()
                     u = self.control_iter( x=val, dt )
 
                     # add calculated input to buffer
