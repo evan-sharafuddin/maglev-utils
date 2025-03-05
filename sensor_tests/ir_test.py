@@ -19,7 +19,7 @@ def main(stdscr):
 
     # constants
     refresh = 0.1 # time in seconds to refresh reading 
-    channel = 5
+    channel = 7
     pi_5v = 5.05 # NOTE might want to remeasure this every once and a while with multimeter
 
     # setup PWM

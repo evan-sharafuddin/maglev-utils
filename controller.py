@@ -1,11 +1,11 @@
-"""Defines a controller for the Maglev system
+#Defines a controller for the Maglev system
 
-Currently, this is just using moving avg and median filters for position estimation, but 
-in the future can utilize Kalman filtering or some other more advanced techniques.
+#Currently, this is just using moving avg and median filters for position estimation, but 
+#in the future can utilize Kalman filtering or some other more advanced techniques.
 
-TODO 
-* define mixer to convert ADC readings to accurate position
-"""
+#TODO 
+#* define mixer to convert ADC readings to accurate position
+#""
 
 from mcp3008 import MCP3008
 from attrs import define, Factory, field
@@ -13,19 +13,24 @@ from attrs import define, Factory, field
 import time
 from collections import deque
 import numpy as np
+import RPi.GPIO as GPIO
 
-@define 
+integral = 0
+dc = 0
+
 class Controller:
-
-    # member variables
-    window_size: int = field()
-    buf_size: int = field(default=10000)
-    adc: MCP3008 = Factory(MCP3008)
-
-    # do anything other than initializing member variables
-    def __attrs_post_init__(self):
-        pass # nothing to do here
-    
+    def __init__( self, window_size, pwm_pin=12, pwm_frequency=2500, buf_size=10000 ):
+        
+        self.window_size = window_size
+        self.pwm_pin = pwm_pin
+        self.pwm_frequency = pwm_frequency
+        self.buf_size = buf_size
+        self.adc = MCP3008()
+        
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setup(self.pwm_pin, GPIO.OUT)
+        self.pi_pwm = GPIO.PWM(self.pwm_pin, self.pwm_frequency)
+        self.pi_pwm.start(0)
     """Enters loop to measure and filter position data"""
     def control( self, 
                  chan: int,               # ADC channel for measuring data (0-7)
@@ -42,7 +47,7 @@ class Controller:
         window = deque(maxlen=self.window_size)
 
         tstart = time.time()
-	previous_time=time.time()
+        previous_time=time.time()
         tic =    tstart # buffer timing
 
         csleep /= 1e6 # convert to seconds
@@ -70,7 +75,7 @@ class Controller:
                     
                     ### APPLY FILTERING 
                     avg = np.mean(window)  # Moving average
-                    med = np.median(window)  # Median (currently unused)
+                    med = np.median(window)  # Median average
                     
                     # average both of the filter results
                     val = ( avg + med ) / 2
@@ -86,7 +91,7 @@ class Controller:
                     ### UPDATE CONTROL LOOP
                     dt=previous_time-time.time()
                     previous_time=time.time()
-                    u = self.control_iter( x=val, dt )
+                    u = self.control_iter( val, dt )
 
                     # add calculated input to buffer
                     input_buf[i] = u
@@ -94,8 +99,7 @@ class Controller:
 
                     ### CHANGE ELECTROMAGNET CURRENT
                     # TODO not yet implemented
-
-
+                    self.pi_pwm.ChangeDutyCycle(u)
                     ### INCREMENT BUFFER INDEX
                     # equivelant to moving to the next time step in our controller
                     i += 1
@@ -115,22 +119,34 @@ class Controller:
 
 
     """Use to calculate the control input given a measured state"""
+    #should output duty cycle
     def control_iter( self,
-                      x: float, dt) -> float:
-	x_des=99;
-	Kp=10;
-	Ki = 0;
-	error=x_des-x
-	integral=error*dt+integral
-	#note that Kp, Ki have units of Amps/ADC reading 
-	current = Kp*error+Ki*integral           
-        
-        return current
+                      x: float, dt: float) -> float:
+        global integral, dc
+        #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
+        #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
+        #x-x_des
+        x_des=100
+        Kp=10
+        Ki = 0
+        error=x-x_des
+        integral=error*dt+integral
+
+        dc = dc + Kp*error+ Ki*integral 
+        #saturation
+        if dc > 100:
+            dc = 100
+            print('Max Dutycycle Reached')
+        elif dc < 0: 
+            dc = 0
+            print('Heres x')
+            print(x)
+        return dc
     
         # TODO Izzy, implement controller calculations here
         # NOTE currently this function just returns the input
 
 # for testing purposes
 if __name__ == '__main__':
-    thing = Controller(window_size=400)
-    thing.control( chan=0, csleep=100 )
+    thing = Controller(400)
+    thing.control( chan=6, csleep=100 )

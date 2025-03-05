@@ -14,7 +14,7 @@ import atexit
 import random
 import sys
 from filters import Filters
-from estimator import Estimator
+##from controller import Controller
 
 SUCCESS = 0 # standard normal exit code
 CHANNEL_NOT_INT = 1 
@@ -74,7 +74,7 @@ def main(stdscr):
     # setup PWM
     if args.pwm:
         pwm_pin = 12
-        pwm_freq = 100 # Hz
+        pwm_freq = 50 # Hz
         duty_cycle = 100 # percent
         
         GPIO.setmode(GPIO.BOARD)
@@ -172,7 +172,7 @@ def main(stdscr):
         for c in channel_list:
             text += \
                f"Channel {c} reading (0-1023): {disp_dict[c]}\n" \
-               f"Current value: { ((disp_dict[c] * (5/1024)) - 5/2) / 0.185}\n" # 3.3 Pi voltage (TODO measure
+               f"Current value: { (2.55 - (disp_dict[c] * (5.097/1023))) / 0.185}\n" # 3.3 Pi voltage (TODO measure
                                                                                 # 0.066 mV/A
                                                                                 # 10 bit adc -- 1024
 
