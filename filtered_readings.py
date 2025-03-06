@@ -74,7 +74,7 @@ def main(stdscr):
     # setup PWM
     if args.pwm:
         pwm_pin = 12
-        pwm_freq = 50 # Hz
+        pwm_freq = 20000 # Hz
         duty_cycle = 100 # percent
         
         GPIO.setmode(GPIO.BOARD)

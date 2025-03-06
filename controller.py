@@ -8,7 +8,8 @@
 #""
 
 from mcp3008 import MCP3008
-from attrs import define, Factory, field
+import curses
+import atexit
 
 import time
 from collections import deque
@@ -19,18 +20,57 @@ integral = 0
 dc = 0
 
 class Controller:
-    def __init__( self, window_size, pwm_pin=12, pwm_frequency=2500, buf_size=10000 ):
+    def __init__( self, 
+                 window_size, 
+                 pwm_pin=12, 
+                 pwm_frequency=20000, 
+                 buf_size=10000,
+                 using_curses=False, 
+                 info_win=None,
+                 data_win=None, ):
         
         self.window_size = window_size
         self.pwm_pin = pwm_pin
         self.pwm_frequency = pwm_frequency
         self.buf_size = buf_size
         self.adc = MCP3008()
+        self.using_curses = using_curses
+        self.info_win = info_win
+        self.data_win = data_win
+
+        self.prev = -1 # use for derivative gain
         
+        # handle GPIO cleanup upon exit
+        def _at_exit():
+            GPIO.cleanup()
+            print("Cleaned GPIO pins")
+
+        atexit.register(_at_exit)
+
+        # set up PWM
         GPIO.setmode(GPIO.BOARD)
         GPIO.setup(self.pwm_pin, GPIO.OUT)
         self.pi_pwm = GPIO.PWM(self.pwm_pin, self.pwm_frequency)
         self.pi_pwm.start(0)
+
+    """Handles curses output if using curses"""
+    def _cout(self, text: str, row: int, info: bool=False):
+        if self.using_curses:
+            if info:
+                self.info_win.move(row, 0)
+                self.info_win.clrtoeol()
+                self.info_win.addstr(row, 0, text)
+                self.info_win.refresh()
+            else:
+                self.data_win.move(row, 0)
+                self.data_win.clrtoeol()
+                self.data_win.addstr(row, 0, text) # add text to column 0
+                self.data_win.refresh()
+
+
+        else: 
+            print(text) # print to stdout
+            
     """Enters loop to measure and filter position data"""
     def control( self, 
                  chan: int,               # ADC channel for measuring data (0-7)
@@ -38,7 +78,7 @@ class Controller:
                 #  crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
                  csleep: int = -1,        # Time (in microseconds) to pause between loop iterations, -1 for no pausing
                  actuate: bool = False,   # If just want to measure data, actuate should be false
-                 batch_save: bool = True  # Save data buffers to text file, TODO use parallelism to fix latency w/ saving buffer?
+                 batch_save: bool = False  # Save data buffers to text file, TODO use parallelism to fix latency w/ saving buffer?
     ): 
         
         # TODO add any testing that needs to be done
@@ -53,7 +93,7 @@ class Controller:
         csleep /= 1e6 # convert to seconds
         
         if ctime == -1:
-            print("Press Ctrl-C to exit control loop")
+            self._cout("Press Ctrl-C to exit control loop", 0, info=True)
 	
 
         # enter control loop 
@@ -65,7 +105,8 @@ class Controller:
             i = 0
 
             # enter buffer loop
-            while i < self.buf_size:
+            # while i < self.buf_size:
+            while True:
                 data = self.adc.read( chan )
                 window.append( data )
 
@@ -78,14 +119,16 @@ class Controller:
                     med = np.median(window)  # Median average
                     
                     # average both of the filter results
-                    val = ( avg + med ) / 2
+                    # val = ( avg + med ) / 2
+                    val = avg
+                    # val = data # just take current reading
 
-                    data_buf[i] = val  # Store the moving average in the buffer
+                    # data_buf[i] = val  # Store the moving average in the buffer
 
                     # print this only when our window is finally full
                     # when we first start this program, we don't have enough readings to perform
                     #   moving average and median averaging, so we wait until window is full
-                    if i == 1: print("Window is loaded")
+                    if i == 1: self._cout("Window is loaded", 1, info=True)
 
 
                     ### UPDATE CONTROL LOOP
@@ -94,7 +137,7 @@ class Controller:
                     u = self.control_iter( val, dt )
 
                     # add calculated input to buffer
-                    input_buf[i] = u
+                    # input_buf[i] = u
 
 
                     ### CHANGE ELECTROMAGNET CURRENT
@@ -104,9 +147,9 @@ class Controller:
                     # equivelant to moving to the next time step in our controller
                     i += 1
 
-                # if applicable, pause
-                if csleep > 0:
-                    time.sleep(csleep)
+                    # if applicable, pause
+                    if csleep > 0:
+                        time.sleep(csleep)
 
             # time to fill buffers
             buf_time = time.time() - tic
@@ -123,30 +166,90 @@ class Controller:
     def control_iter( self,
                       x: float, dt: float) -> float:
         global integral, dc
+    
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
         x_des=100
-        Kp=10
-        Ki = 0
+        Kp= 0.00005
+        Ki = 0.0001
+        Kd = -0.1
+        INT_MAX_ABS = 1
+
+        max_int = INT_MAX_ABS # prevent integrator windup
+        min_int = -INT_MAX_ABS
         error=x-x_des
         integral=error*dt+integral
 
-        dc = dc + Kp*error+ Ki*integral 
+        if integral > max_int:
+            integral = max_int
+        if integral < min_int: 
+            integral = min_int
+
+        if self.prev == -1:
+            derivative = 0
+        else:
+            derivative = (error - self.prev) / dt
+        
+        self.prev = error
+
+        # print out stuff
+        self._cout(f'Error: {error}', 2)
+        self._cout(f'Derivative: {derivative}', 3)
+        self._cout(f'Integral: {integral}', 4)
+        
+
+        dc = dc + Kp*error+ Ki*integral + Kd*derivative
         #saturation
         if dc > 100:
             dc = 100
-            print('Max Dutycycle Reached')
+            self._cout('Max Dutycycle Reached', 2, info=True)
         elif dc < 0: 
             dc = 0
-            print('Heres x')
-            print(x)
+            self._cout('Min Dutycycle Reached', 2, info=True)
+        else:
+            self._cout('', 2, info=True)
+
+        self._cout(f"Position sensor reading: {x}", 0)
+
+        self._cout(f"Duty cycle input: {dc}", 1)
         return dc
-    
-        # TODO Izzy, implement controller calculations here
-        # NOTE currently this function just returns the input
 
 # for testing purposes
+def main(stdscr):
+    
+    ### Boilerplate setup
+    # Initialize curses terminal
+    curses.curs_set(0)  # Hide the cursor
+    stdscr.nodelay(1)   # Non-blocking input
+    stdscr.timeout(100)  # Refresh every 100 ms
+
+    height, width = stdscr.getmaxyx()
+    info_section_height = 5
+    data_section_height = height - info_section_height
+
+    # Create a window for error messages (top part of the screen)
+    info_win = curses.newwin(info_section_height, width, 0, 0)
+    # Create a window for routine data (bottom part of the screen)
+    data_win = curses.newwin(data_section_height, width, info_section_height, 0)
+    
+    # add info to info_win
+    # info_win.addstr(0, 0, "Press Ctrl-C to exit program")
+    info_win.addstr(4, 0, "-------")
+    # info_win.refresh()
+
+    ### Init controller
+    thing = Controller(5, using_curses=True, info_win=info_win, data_win=data_win)
+    thing.control( chan=6, csleep=-1 ) # NOTE csleep is in microseconds!
+
+
 if __name__ == '__main__':
-    thing = Controller(400)
-    thing.control( chan=6, csleep=100 )
+    try:
+        curses.wrapper(main)
+
+    # # must print error messages outside of the curses wrapper
+    # except SystemExit as e:
+    #     print()
+
+    except Exception as e:
+        print(f"An error occured: {str(e)}")
