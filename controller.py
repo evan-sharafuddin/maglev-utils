@@ -15,6 +15,8 @@ import time
 from collections import deque
 import numpy as np
 import RPi.GPIO as GPIO
+import csv
+import os
 
 integral = 0
 dc = 0
@@ -132,7 +134,7 @@ class Controller:
 
 
                     ### UPDATE CONTROL LOOP
-                    dt=previous_time-time.time()
+                    dt=time.time() - previous_time
                     previous_time=time.time()
                     u = self.control_iter( val, dt )
 
@@ -170,11 +172,11 @@ class Controller:
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
-        x_des=100
-        Kp= 0.00005
-        Ki = 0.0001
-        Kd = -0.1
-        INT_MAX_ABS = 1
+        x_des=400
+        Kp= 0.1
+        Ki = 0.01
+        Kd = 0
+        INT_MAX_ABS = 50
 
         max_int = INT_MAX_ABS # prevent integrator windup
         min_int = -INT_MAX_ABS
@@ -199,7 +201,7 @@ class Controller:
         self._cout(f'Integral: {integral}', 4)
         
 
-        dc = dc + Kp*error+ Ki*integral + Kd*derivative
+        dc = Kp*error+ Ki*integral + Kd*derivative
         #saturation
         if dc > 100:
             dc = 100
@@ -213,6 +215,13 @@ class Controller:
         self._cout(f"Position sensor reading: {x}", 0)
 
         self._cout(f"Duty cycle input: {dc}", 1)
+        filename = 'save_data.csv'
+        file_exists = os.path.isfile(filename)
+        with open(filename, mode="a", newline='') as file:
+          writer = csv.writer(file)
+          if not file_exists:
+              writer.writerow(["Dutycycle", "Position", "Error"])
+          writer.writerow([dc , x, error])
         return dc
 
 # for testing purposes
