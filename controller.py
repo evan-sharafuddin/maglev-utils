@@ -172,11 +172,11 @@ class Controller:
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
-        x_des=400
-        Kp= 0.1
-        Ki = 0.01
-        Kd = 0
-        INT_MAX_ABS = 50
+        x_des=900
+        Kp= 0.7
+        Ki = 2
+        Kd = 1
+        INT_MAX_ABS = 10
 
         max_int = INT_MAX_ABS # prevent integrator windup
         min_int = -INT_MAX_ABS
@@ -199,6 +199,7 @@ class Controller:
         self._cout(f'Error: {error}', 2)
         self._cout(f'Derivative: {derivative}', 3)
         self._cout(f'Integral: {integral}', 4)
+        self._cout(f'dt: {dt}', 5)
         
 
         dc = Kp*error+ Ki*integral + Kd*derivative
@@ -249,7 +250,7 @@ def main(stdscr):
 
     ### Init controller
     thing = Controller(5, using_curses=True, info_win=info_win, data_win=data_win)
-    thing.control( chan=6, csleep=-1 ) # NOTE csleep is in microseconds!
+    thing.control( chan=7, csleep=-1 ) # NOTE csleep is in microseconds!
 
 
 if __name__ == '__main__':
