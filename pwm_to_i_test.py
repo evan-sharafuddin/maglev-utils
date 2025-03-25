@@ -1,3 +1,5 @@
+import RPi.GPIO as GPIO
+
 import mcp3008
 import time
 import csv
@@ -6,7 +8,7 @@ import RPi.GPIO as GPIO
 # Initialize ADC
 channel = 6
 adc = mcp3008.MCP3008()
-pwm_pin=12
+pwm_pin = 12
 
 #set up PWM
 GPIO.setmode(GPIO.BOARD)
@@ -16,6 +18,9 @@ pi_pwm.start(0)
 pwm_bool=0
 start_time=time.time()
 i = 0
+
+
+
 
 # Open a CSV file for writing
 with open("no_pwm.csv", "w", newline="") as file:
