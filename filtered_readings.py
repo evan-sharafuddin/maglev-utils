@@ -171,8 +171,8 @@ def main(stdscr):
         
         for c in channel_list:
             text += \
-               f"Channel {c} reading (0-1023): {disp_dict[c]}\n"
-               #f"Current value: { (2.55 - (disp_dict[c] * (5.097/1023))) / 0.185}\n" # 3.3 Pi voltage (TODO measure
+               f"Channel {c} reading (0-1023): {disp_dict[c]}\n" \
+               f"Current value: { (2.55 - (disp_dict[c] * (5.097/1023))) / 0.185}\n" # 3.3 Pi voltage (TODO measure
                                                                                 # 0.066 mV/A
                                                                                 # 10 bit adc -- 1024
 
