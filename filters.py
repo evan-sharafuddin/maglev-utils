@@ -3,34 +3,38 @@ Creates helper functions for moving average and median filters
 
 """
 
-import numpy as np
+from collections import deque
+from statistics import median 
 
 class Filters:
 
-    """Returns the average value in the list `data`"""
-    @staticmethod
-    def simple_mean( data: np.ndarray ) -> float:
-        
-        return sum(data) / len(data)
+    def __init__( self, list_size=5, threshold=True ):
+        self.list = deque()
+        self.list_size = list_size
+        self.thresh = threshold # NOTE: thresholding currently not implemented
     
-
-    """Returns the moving average list of `data` using a window of size `window`"""
-    @staticmethod
-    def moving_avg( data: np.ndarray, window: int ) -> list:
+    def _add( self, data ): 
+        if len(self.list) == self.list_size:
+            self.list.pop()
         
-        ret_len = len(data) - window + 1 # length of moving average list
-        ret = np.array(ret_len)
-        j = window # use for slicing
 
-        for i in range( len(data) - window + 1 ):
-            j += i # use for slicing
-            
-                
-            
+        self.list.appendleft(data)
+        
 
-    
 
-    """Returns a median filtered list of `data` using a window of size `window`"""
-    @staticmethod
-    def median_filter( data: np.ndarray, window: int ) -> list:
-        pass
+    def add_data( self, data ) -> float:
+        self._add(data)
+
+        return data
+
+    def add_data_mean( self, data ) -> float:
+        self._add(data)
+
+        return sum(self.list) / len(self.list)
+        
+    def add_data_median( self, data ) -> float: 
+        self._add(data)
+
+        return median(self.list)
+        
+
