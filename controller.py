@@ -25,7 +25,7 @@ class Controller:
     def __init__( self, 
                  window_size, 
                  pwm_pin=12, 
-                 pwm_frequency=20000, 
+                 pwm_frequency=10000, 
                  buf_size=10000,
                  using_curses=False, 
                  info_win=None,
@@ -136,7 +136,7 @@ class Controller:
                     ### UPDATE CONTROL LOOP
                     dt=time.time() - previous_time
                     previous_time=time.time()
-                    u = self.control_iter( val, dt )
+                    u = self.control_iter( val, dt, tstart )
 
                     # add calculated input to buffer
                     # input_buf[i] = u
@@ -166,17 +166,17 @@ class Controller:
     """Use to calculate the control input given a measured state"""
     #should output duty cycle
     def control_iter( self,
-                      x: float, dt: float) -> float:
+                     x: float, dt: float, tstart: float) -> float:
         global integral, dc
     
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
-        x_des=900
-        Kp= 0.7
-        Ki = 2
-        Kd = 1
-        INT_MAX_ABS = 10
+        x_des=700
+        Kp= 0.01
+        Ki = 0.01
+        Kd = 0.01
+        INT_MAX_ABS = 1
 
         max_int = INT_MAX_ABS # prevent integrator windup
         min_int = -INT_MAX_ABS
@@ -204,8 +204,8 @@ class Controller:
 
         dc = Kp*error+ Ki*integral + Kd*derivative
         #saturation
-        if dc > 100:
-            dc = 100
+        if dc > 99:
+            dc = 99
             self._cout('Max Dutycycle Reached', 2, info=True)
         elif dc < 0: 
             dc = 0
@@ -221,8 +221,8 @@ class Controller:
         with open(filename, mode="a", newline='') as file:
           writer = csv.writer(file)
           if not file_exists:
-              writer.writerow(["Dutycycle", "Position", "Error"])
-          writer.writerow([dc , x, error])
+              writer.writerow(["Time", "Dutycycle", "Position", "Error"])
+          writer.writerow([f"{time.time() - tstart}", dc , x, error])
         return dc
 
 # for testing purposes
@@ -250,7 +250,7 @@ def main(stdscr):
 
     ### Init controller
     thing = Controller(5, using_curses=True, info_win=info_win, data_win=data_win)
-    thing.control( chan=7, csleep=-1 ) # NOTE csleep is in microseconds!
+    thing.control( chan=0, csleep=-1 ) # NOTE csleep is in microseconds!
 
 
 if __name__ == '__main__':

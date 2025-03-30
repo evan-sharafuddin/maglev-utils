@@ -18,16 +18,17 @@ from filters import Filters
 channel = 1
 adc = mcp3008.MCP3008()
 pwm_pin = 12
-pwm_frequency = 10000
+pwm_frequency = 500
 
 # set test param
 total_time = 0.5 
 on_time = 0.1
 pwm_start = 0
 pwm_stop = 100
-sample_freq = 5e3
-window = 10
+sample_freq = 8e3
+window = 1
 do_median = False # otherwise mean
+do_median_mean = False
 
 # set up filter
 filt = Filters(window)
@@ -57,7 +58,9 @@ with open("../data/inductor_charging_test.csv", "w", newline="") as file:
         count = adc.read(channel)
         
 
-        if do_median:
+        if do_median_mean:
+            count = filt.add_data_mean_t(count)
+        elif do_median:
             count = filt.add_data_median(count)
         else:
             count = filt.add_data_mean(count)

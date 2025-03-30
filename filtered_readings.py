@@ -149,7 +149,7 @@ def main(stdscr):
 
         disp_dict = dict()
         for ii, c in enumerate(channel_list):
-            disp_dict[c] = Filters.simple_mean(data[c])
+            disp_dict[c] = sum(data[c]) / len(data[c])
 
             if args.file:
                 data_point = f"{time.time() - start} {disp_dict[c]}\n"
