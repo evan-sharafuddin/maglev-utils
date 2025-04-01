@@ -8,20 +8,41 @@ from statistics import median
 
 class Filters:
 
-    def __init__( self, list_size=5, threshold=True ):
+    MEDIAN_THRESH = 0.05
+
+    def __init__( self, list_size=5, med_threshold=True ):
         self.list = deque()
         self.list_size = list_size
-        self.thresh = threshold # NOTE: thresholding currently not implemented
-    
-    def _add( self, data ): 
+
+        self.thresh = med_threshold # NOTE: thresholding currently not implemented
+        if med_threshold:
+            self.list_thresh = deque()
+            self.list_size_thresh = list_size * 2
+
+
+    def _add( self, data, thresh=False ): 
         if len(self.list) == self.list_size:
             self.list.pop()
+        if len(self.list_thresh) == self.list_size_thresh:
+            self.list_thresh.pop()
         
+        # calculating median filter thresholding
+        self.list_thresh.appendleft(data)
+            
+        med = median(self.list_thresh)
+        try: 
 
-        self.list.appendleft(data)
-        
+            if thresh and len(self.list_thresh) == self.list_size_thresh and abs( (data - med) / data ) > Filters.MEDIAN_THRESH:
+                # new data point is very off from median, skip adding
+                most_recent_val = self.list[0]
+                self.list.appendleft(most_recent_val)
+            else:
+                # new data point is good to add
+                self.list.appendleft(data)
 
-
+        except:
+            self.list.appendleft(data)
+            print("ERROR: dividebyzero")
     def add_data( self, data ) -> float:
         self._add(data)
 
@@ -37,4 +58,9 @@ class Filters:
 
         return median(self.list)
         
+    def add_data_mean_t( self, data ) -> float:
+        self._add(data, self.thresh)
+        
+        return sum(self.list) / len(self.list)
+
 
