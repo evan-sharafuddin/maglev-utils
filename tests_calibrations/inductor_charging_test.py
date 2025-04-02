@@ -18,7 +18,7 @@ from filters import Filters
 channel = 1
 adc = mcp3008.MCP3008()
 pwm_pin = 12
-pwm_frequency = 500
+pwm_frequency = 50
 
 # set test param
 total_time = 0.5 

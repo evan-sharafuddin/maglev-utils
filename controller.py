@@ -25,7 +25,7 @@ class Controller:
     def __init__( self, 
                  window_size, 
                  pwm_pin=12, 
-                 pwm_frequency=10000, 
+                 pwm_frequency=500, 
                  buf_size=10000,
                  using_curses=False, 
                  info_win=None,
@@ -172,10 +172,10 @@ class Controller:
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
-        x_des=700
-        Kp= 0.01
-        Ki = 0.01
-        Kd = 0.01
+        x_des=950
+        Kp= 0.7
+        Ki = 0.2
+        Kd = 0.02
         INT_MAX_ABS = 1
 
         max_int = INT_MAX_ABS # prevent integrator windup

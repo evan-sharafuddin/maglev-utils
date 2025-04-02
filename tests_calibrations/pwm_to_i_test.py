@@ -1,26 +1,31 @@
 import RPi.GPIO as GPIO
 
+import sys
+import os
+sys.path.append(os.path.abspath(".."))
+
 import mcp3008
 import time
 import csv
 import RPi.GPIO as GPIO
 
+
 # Initialize ADC
 channel = 1
 adc = mcp3008.MCP3008()
 pwm_pin = 12
-pwm_frequency = 5000
+pwm_frequency = 500 # anything above 1000 is dicey...
 avg_time = 0.1
 
 # set start and stop
 start = 0
 stop  = 100
-incr = 0.5
+incr = 1
 
 #set up PWM
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(pwm_pin, GPIO.OUT)
-pi_pwm = GPIO.PWM(pwm_pin, 5000) 
+pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
 pi_pwm.start(0)
 
 # Open a CSV file for writing
