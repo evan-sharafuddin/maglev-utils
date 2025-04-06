@@ -8,6 +8,7 @@
 #""
 
 from mcp3008 import MCP3008
+from pwm import PWM
 import curses
 import atexit
 
@@ -24,8 +25,8 @@ dc = 0
 class Controller:
     def __init__( self, 
                  window_size, 
-                 pwm_pin=12, 
-                 pwm_frequency=500, 
+                 pwm_pin=18, # NOT physical pin
+                 pwm_frequency=10000, 
                  buf_size=10000,
                  using_curses=False, 
                  info_win=None,
@@ -42,18 +43,15 @@ class Controller:
 
         self.prev = -1 # use for derivative gain
         
-        # handle GPIO cleanup upon exit
-        def _at_exit():
-            GPIO.cleanup()
-            print("Cleaned GPIO pins")
+        # # handle GPIO cleanup upon exit
+        # def _at_exit():
+        #     GPIO.cleanup()
+        #     print("Cleaned GPIO pins")
 
-        atexit.register(_at_exit)
+        # atexit.register(_at_exit)
 
         # set up PWM
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(self.pwm_pin, GPIO.OUT)
-        self.pi_pwm = GPIO.PWM(self.pwm_pin, self.pwm_frequency)
-        self.pi_pwm.start(0)
+        self.pwm = PWM(pin=pwm_pin, freq=pwm_frequency)
 
     """Handles curses output if using curses"""
     def _cout(self, text: str, row: int, info: bool=False):
@@ -144,7 +142,7 @@ class Controller:
 
                     ### CHANGE ELECTROMAGNET CURRENT
                     # TODO not yet implemented
-                    self.pi_pwm.ChangeDutyCycle(u)
+                    self.pwm.set_dc(u)
                     ### INCREMENT BUFFER INDEX
                     # equivelant to moving to the next time step in our controller
                     i += 1
