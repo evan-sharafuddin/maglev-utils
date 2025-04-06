@@ -18,7 +18,7 @@ adc = mcp3008.MCP3008()
 pwm_pin = 12
 pwm_frequency = 5000
 fs = 5000
-switch_fs = 45
+switch_fs = 35
 pwm = 0
 max_pwm = 100
 min_pwm = 0
@@ -26,7 +26,7 @@ min_pwm = 0
 # set elapsed time
 # total_time = 0.02
 total_time = 2/switch_fs
-t = 0
+#total_time = 1
 
 counts = 0
 ii = 0
@@ -45,7 +45,7 @@ filt = Filters(10)
 with open("./data/bounce_test.csv", "w", newline="") as file:
     writer = csv.writer(file)
     writer.writerow([f"PWM frequency of {pwm_frequency}"])
-    writer.writerow(["Time","Frequency", "PWM", "ADC Reading", "Current Reading"])
+    writer.writerow(["Time", "PWM", "ADC Reading", "Current Reading"])
     
     t = time.time()
     sample_time = time.time()
@@ -81,12 +81,11 @@ with open("./data/bounce_test.csv", "w", newline="") as file:
         b = -10.3652
         current = m * count + b
         curr_time = (time.time() - t) % 60;\
-        writer.writerow([pwm_frequency, curr_time, pwm, count, current])
+        writer.writerow([curr_time, pwm, count, current])
 
         # if pwm % 10 == 0 and pwm != 0:
         #   print(".", flush=True)
         # else:
-        #   print(".", end = "", flush=True)  
-        
+        #   print(".", end = "", flush=True) 
 
 GPIO.cleanup()
