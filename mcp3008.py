@@ -1,5 +1,3 @@
-
-
 import spidev
 
 class MCP3008:

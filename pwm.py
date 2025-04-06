@@ -36,7 +36,6 @@ class PWM:
         else:
             MAX_DC_VAL = 1000000
             duty_cycle = int(MAX_DC_VAL * (dc / 100))  # duty in range 0 - 1,000,000
-            print(duty_cycle)
             self.pi.hardware_PWM(self.pin, self.freq, duty_cycle)
 
 

@@ -9,24 +9,23 @@ import time
 import csv
 import RPi.GPIO as GPIO
 
+from pwm import PWM
+
 
 # Initialize ADC
 channel = 1
 adc = mcp3008.MCP3008()
-pwm_pin = 12
-pwm_frequency = 500 # anything above 1000 is dicey...
+pwm_pin = 18
+pwm_frequency = 10000
 avg_time = 0.1
 
 # set start and stop
 start = 0
 stop  = 100
-incr = 1
+incr = 0.1
 
 #set up PWM
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(pwm_pin, GPIO.OUT)
-pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
-pi_pwm.start(0)
+pi_pwm = PWM(freq=pwm_frequency)
 
 # Open a CSV file for writing
 with open("pwm_to_i_test.csv", "w", newline="") as file:
@@ -37,7 +36,7 @@ with open("pwm_to_i_test.csv", "w", newline="") as file:
     pwm = start
     while pwm <= stop:
         
-        pi_pwm.ChangeDutyCycle(pwm)
+        pi_pwm.set_dc(pwm)
         
         counts = 0
         ii = 0

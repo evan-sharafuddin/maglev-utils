@@ -14,6 +14,7 @@ import atexit
 import random
 import sys
 from filters import Filters
+from pwm import PWM
 ##from controller import Controller
 
 SUCCESS = 0 # standard normal exit code
@@ -77,19 +78,9 @@ def main(stdscr):
         pwm_freq = 5000 # Hz
         duty_cycle = 100# percent
         
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setmode(GPIO.BOARD)		#set pin numbering system
-        GPIO.setup(pwm_pin, GPIO.OUT)
-        pi_pwm = GPIO.PWM(pwm_pin, pwm_freq)		#create PWM instance with frequency
-        pi_pwm.start(duty_cycle)				#start PWM of required Duty Cycle 
+        pi_pwm = PWM()
+        pi_pwm.set_dc(duty_cycle)
 
-    # handle GPIO cleanup upon exit
-    def _at_exit():
-        if not args.dummy and args.pwm:
-            GPIO.cleanup()
-            print("Cleaned GPIO pins")
-
-    atexit.register(_at_exit)
 
     # Initialize curses terminal
     curses.curs_set(0)  # Hide the cursor

@@ -7,10 +7,16 @@
 #* define mixer to convert ADC readings to accurate position
 #""
 
+# NOTE if you get this error: wmove() returned ERR
+#   try increasing the size of your terminal. Same with other curses errors, this is usually the root cause
+
+
 from mcp3008 import MCP3008
 from pwm import PWM
+from filters import Filters
 import curses
 import atexit
+import numpy as np
 
 import time
 from collections import deque
@@ -27,7 +33,7 @@ class Controller:
                  window_size, 
                  pwm_pin=18, # NOT physical pin
                  pwm_frequency=10000, 
-                 buf_size=10000,
+                 buf_size=1000,
                  using_curses=False, 
                  info_win=None,
                  data_win=None, ):
@@ -42,16 +48,20 @@ class Controller:
         self.data_win = data_win
 
         self.prev = -1 # use for derivative gain
-        
-        # # handle GPIO cleanup upon exit
-        # def _at_exit():
-        #     GPIO.cleanup()
-        #     print("Cleaned GPIO pins")
 
-        # atexit.register(_at_exit)
-
-        # set up PWM
         self.pwm = PWM(pin=pwm_pin, freq=pwm_frequency)
+
+        # load adc to position lookup table
+        import numpy as np
+
+        # Load CSV (skip header if you included one)
+        data = np.loadtxt('adc_to_position_lookup.csv', delimiter=',', skiprows=0)  # skiprows=0 if no header
+
+        self.adc_counts = data[:, 0].astype(int)
+        self.positions = data[:, 1]
+        
+        # create filters
+        self.filt = Filters(list_size=window_size)
 
     """Handles curses output if using curses"""
     def _cout(self, text: str, row: int, info: bool=False):
@@ -75,90 +85,62 @@ class Controller:
     def control( self, 
                  chan: int,               # ADC channel for measuring data (0-7)
                  ctime: int = -1,         # Time (in seconds) to run control loop, -1 for infinite loop
-                #  crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
-                 csleep: int = -1,        # Time (in microseconds) to pause between loop iterations, -1 for no pausing
-                 actuate: bool = False,   # If just want to measure data, actuate should be false
-                 batch_save: bool = False  # Save data buffers to text file, TODO use parallelism to fix latency w/ saving buffer?
+                 crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
     ): 
         
-        # TODO add any testing that needs to be done
-        
-        # create data sotrage method
-        window = deque(maxlen=self.window_size)
-
         tstart = time.time()
         previous_time=time.time()
-        tic =    tstart # buffer timing
-
-        csleep /= 1e6 # convert to seconds
+        tic = tstart # buffer timing
         
         if ctime == -1:
             self._cout("Press Ctrl-C to exit control loop", 0, info=True)
-	
+
 
         # enter control loop 
         while ctime == -1 or time.time() - tic < ctime: 
-
+            
             data_buf = np.empty ( self.buf_size )
             input_buf = np.empty( self.buf_size )
+            time_buf  = np.empty( self.buf_size )
 
             i = 0
+            tic = time.time()
+
 
             # enter buffer loop
-            # while i < self.buf_size:
-            while True:
+            while i < self.buf_size:
                 data = self.adc.read( chan )
-                window.append( data )
 
-                # Apply filtering only when the window is full
-                # NOTE will only enter this loop when the program is first starting
-                if len(window) == self.window_size:
-                    
-                    ### APPLY FILTERING 
-                    avg = np.mean(window)  # Moving average
-                    med = np.median(window)  # Median average
-                    
-                    # average both of the filter results
-                    # val = ( avg + med ) / 2
-                    val = avg
-                    # val = data # just take current reading
+                val = self.filt.add_data_mean_t(data) # filter readings
 
-                    # data_buf[i] = val  # Store the moving average in the buffer
+                # convert counts to position
+                self._cout(f'ADC counts: {val}', 8) # TODO be careful with the row index here, look in control_iter()
+                val = int( round(val) ) # convert to integer
+                val = self.positions[self.adc_counts == val][0]
 
-                    # print this only when our window is finally full
-                    # when we first start this program, we don't have enough readings to perform
-                    #   moving average and median averaging, so we wait until window is full
-                    if i == 1: self._cout("Window is loaded", 1, info=True)
+                ### UPDATE CONTROL LOOP
+                dt=time.time() - previous_time
+                previous_time=time.time()
+                u = self.control_iter( val, dt, tstart )
+                
+                # convert current to PWM
+                self.pwm.set_dc(u)
 
 
-                    ### UPDATE CONTROL LOOP
-                    dt=time.time() - previous_time
-                    previous_time=time.time()
-                    u = self.control_iter( val, dt, tstart )
+                data_buf[i] = val
+                input_buf[i] = u
+                time_buf[i] = time.time() - tic
+                i += 1
 
-                    # add calculated input to buffer
-                    # input_buf[i] = u
-
-
-                    ### CHANGE ELECTROMAGNET CURRENT
-                    # TODO not yet implemented
-                    self.pwm.set_dc(u)
-                    ### INCREMENT BUFFER INDEX
-                    # equivelant to moving to the next time step in our controller
-                    i += 1
-
-                    # if applicable, pause
-                    if csleep > 0:
-                        time.sleep(csleep)
 
             # time to fill buffers
-            buf_time = time.time() - tic
+            # buf_time = time.time() - tic
 
-            print("Writing buffers...")
-            # np.savetxt(f"buf_{buf_time:.4f}.txt", self.data_buf, fmt='%f')
+            self._cout("Writing buffers...", 3, info=True)
             np.savetxt(f"x.txt", data_buf, fmt='%f')
             np.savetxt(f"u.txt", input_buf, fmt='%f')
-            print("Buffers written as text files!")
+            np.savetxt(f"t.txt", time_buf, fmt='%f')
+            self._cout("Buffers written as text files!", 3, info=True)
 
 
     """Use to calculate the control input given a measured state"""
@@ -170,10 +152,10 @@ class Controller:
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
-        x_des=950
-        Kp= 0.7
-        Ki = 0.2
-        Kd = 0.02
+        x_des=5
+        Kp= 100
+        Ki = 10
+        Kd = 1
         INT_MAX_ABS = 1
 
         max_int = INT_MAX_ABS # prevent integrator windup
@@ -198,7 +180,8 @@ class Controller:
         self._cout(f'Derivative: {derivative}', 3)
         self._cout(f'Integral: {integral}', 4)
         self._cout(f'dt: {dt}', 5)
-        
+        if x is not None: self._cout(f'Position (mm): {x}', 6)
+        self._cout(f'Position setpoint (mm) {x_des}', 7)
 
         dc = Kp*error+ Ki*integral + Kd*derivative
         #saturation
@@ -214,13 +197,15 @@ class Controller:
         self._cout(f"Position sensor reading: {x}", 0)
 
         self._cout(f"Duty cycle input: {dc}", 1)
-        filename = 'save_data.csv'
-        file_exists = os.path.isfile(filename)
-        with open(filename, mode="a", newline='') as file:
-          writer = csv.writer(file)
-          if not file_exists:
-              writer.writerow(["Time", "Dutycycle", "Position", "Error"])
-          writer.writerow([f"{time.time() - tstart}", dc , x, error])
+        
+        
+        # filename = 'save_data.csv'
+        # file_exists = os.path.isfile(filename)
+        # with open(filename, mode="a", newline='') as file:
+        #   writer = csv.writer(file)
+        #   if not file_exists:
+        #       writer.writerow(["Time", "Dutycycle", "Position", "Error"])
+        #   writer.writerow([f"{time.time() - tstart}", dc , x, error])
         return dc
 
 # for testing purposes
@@ -247,8 +232,8 @@ def main(stdscr):
     # info_win.refresh()
 
     ### Init controller
-    thing = Controller(5, using_curses=True, info_win=info_win, data_win=data_win)
-    thing.control( chan=0, csleep=-1 ) # NOTE csleep is in microseconds!
+    thing = Controller(10, using_curses=True, info_win=info_win, data_win=data_win)
+    thing.control( chan=0 ) 
 
 
 if __name__ == '__main__':
