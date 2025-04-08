@@ -42,7 +42,7 @@ class Filters:
 
         except:
             self.list.appendleft(data)
-            print("ERROR: dividebyzero")
+            print(f"ERROR: dividebyzero... value you are trying to add is {data}. Cannot add value of zero.")
     def add_data( self, data ) -> float:
         self._add(data)
 

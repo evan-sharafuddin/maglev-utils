@@ -33,7 +33,7 @@ class Controller:
                  window_size, 
                  pwm_pin=18, # NOT physical pin
                  pwm_frequency=10000, 
-                 buf_size=1000,
+                 buf_size=2000,
                  using_curses=False, 
                  info_win=None,
                  data_win=None, ):
@@ -88,40 +88,54 @@ class Controller:
                  crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
     ): 
         
-        tstart = time.time()
-        previous_time=time.time()
+        self._cout("Magnet on for two seconds", 0, info=True)
+        self.pwm.set_dc(100)
+        time.sleep(2)
+        self.pwm.set_dc(0)
+
+        # optional sleep?
+
+
+
+        tstart = time.monotonic_ns()
+        previous_time=time.monotonic_ns()
         tic = tstart # buffer timing
+
+        # ramp up desired position input
+        x_des = 0
         
         if ctime == -1:
             self._cout("Press Ctrl-C to exit control loop", 0, info=True)
 
 
         # enter control loop 
-        while ctime == -1 or time.time() - tic < ctime: 
+        while ctime == -1 or time.monotonic_ns() - tic < ctime: 
             
             data_buf = np.empty ( self.buf_size )
             input_buf = np.empty( self.buf_size )
             time_buf  = np.empty( self.buf_size )
 
             i = 0
-            tic = time.time()
+            tic = time.monotonic_ns()
 
 
             # enter buffer loop
             while i < self.buf_size:
                 data = self.adc.read( chan )
 
-                val = self.filt.add_data_mean_t(data) # filter readings
+                val = self.filt.add_data_mean(data) # filter readings
 
                 # convert counts to position
                 self._cout(f'ADC counts: {val}', 8) # TODO be careful with the row index here, look in control_iter()
-                val = int( round(val) ) # convert to integer
-                val = self.positions[self.adc_counts == val][0]
+                # val = int( round(val) ) # convert to integer
+                # val = self.positions[self.adc_counts == val][0]
 
+                # ramp up position command input
+                if x_des < 300: x_des += 0.5
                 ### UPDATE CONTROL LOOP
-                dt=time.time() - previous_time
-                previous_time=time.time()
-                u = self.control_iter( val, dt, tstart )
+                dt=(time.monotonic_ns() - previous_time)*1e-9
+                previous_time=time.monotonic_ns()
+                u = self.control_iter( val, dt, tstart, x_des=x_des )
                 
                 # convert current to PWM
                 self.pwm.set_dc(u)
@@ -129,7 +143,7 @@ class Controller:
 
                 data_buf[i] = val
                 input_buf[i] = u
-                time_buf[i] = time.time() - tic
+                time_buf[i] = (time.monotonic_ns() - tic)*1e-9
                 i += 1
 
 
@@ -142,21 +156,23 @@ class Controller:
             np.savetxt(f"t.txt", time_buf, fmt='%f')
             self._cout("Buffers written as text files!", 3, info=True)
 
+            break
+
 
     """Use to calculate the control input given a measured state"""
     #should output duty cycle
     def control_iter( self,
-                     x: float, dt: float, tstart: float) -> float:
+                     x: float, dt: float, tstart: float, x_des: float) -> float:
         global integral, dc
     
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
-        x_des=5
-        Kp= 100
-        Ki = 10
-        Kd = 1
-        INT_MAX_ABS = 1
+        # x_des=200
+        Kp= 1
+        Ki = 0.1
+        Kd = 0.005
+        INT_MAX_ABS = 10
 
         max_int = INT_MAX_ABS # prevent integrator windup
         min_int = -INT_MAX_ABS
