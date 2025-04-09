@@ -18,14 +18,14 @@ from filters import Filters
 channel = 1
 adc = mcp3008.MCP3008()
 pwm_pin = 12
-pwm_frequency = 10000
+pwm_frequency = 50
 
 # set test param
-total_time = 0.5 
-on_time = 0.2
+total_time = 1
+on_time = 0.3
 pwm_start = 0
 pwm_stop = 100
-sample_freq = 8e3
+
 window = 1
 do_median = False # otherwise mean
 do_median_mean = False
@@ -39,24 +39,17 @@ GPIO.setup(pwm_pin, GPIO.OUT)
 pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
 pi_pwm.start(pwm_start)
 
-pwm = 0
 # Open a CSV file for writing
-with open("../data/inductor_charging_test.csv", "w", newline="") as file:
+with open(f"../data/risetime_test_{pwm_start}-{pwm_stop}.csv", "w", newline="") as file:
     writer = csv.writer(file)
 #    writer.writerow([f"PWM frequency of {pwm_frequency}"])
     writer.writerow(["Time", "ADC Reading", "Current Reading"])
 
     t = time.time()
-    s_time = time.time()
+    
     while time.time() - t < total_time:
-        
-        if time.time() - s_time < 1/sample_freq:
-            continue
-        else:
-            s_time = time.time() # time to sample!
 
-        count = adc.read(channel)
-        
+        count = adc.read(channel)        
 
         if do_median_mean:
             count = filt.add_data_mean_t(count)
@@ -67,7 +60,6 @@ with open("../data/inductor_charging_test.csv", "w", newline="") as file:
 
         if time.time() - t >= on_time:
             pi_pwm.ChangeDutyCycle(pwm_stop)
-#            pwm = pwm_stop
 
         m = 0.0201
         b = -10.3652
