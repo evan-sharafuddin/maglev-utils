@@ -121,7 +121,9 @@ class Controller:
 
             # enter buffer loop
             while i < self.buf_size:
-                data = self.adc.read( chan )
+                datat = self.adc.read( 2 ) # top hall effect
+                datab = self.adc.read( 3 ) # bottom hall effect
+                data = datat - datab
 
                 val = self.filt.add_data_mean(data) # filter readings
 
@@ -131,8 +133,8 @@ class Controller:
                 # val = self.positions[self.adc_counts == val][0]
 
                 # ramp up position command input
-                if x_des < 300: x_des += 0.5
-                # x_des = 430
+                # if x_des < 300: x_des += 0.5
+                x_des = -5
                 ### UPDATE CONTROL LOOP
                 dt=(time.monotonic_ns() - previous_time)*1e-9
                 previous_time=time.monotonic_ns()
@@ -170,9 +172,9 @@ class Controller:
         #(x_des=0). if x > 0, the ball is too low, so we want current to increase. So we want error to be 
         #x-x_des
         # x_des=200
-        Kp= 1
-        Ki = 0.1
-        Kd = 0.005
+        Kp= 50
+        Ki = 1
+        Kd = 1
         INT_MAX_ABS = 10
 
         max_int = INT_MAX_ABS # prevent integrator windup
