@@ -11,6 +11,7 @@ import mcp3008
 import time
 import csv
 import RPi.GPIO as GPIO
+from pwm import PWM
 
 from filters import Filters
 
@@ -18,29 +19,25 @@ from filters import Filters
 channel = 1
 adc = mcp3008.MCP3008()
 pwm_pin = 12
-pwm_frequency = 50
 
 # set test param
-total_time = 1
-on_time = 0.3
-pwm_start = 0
-pwm_stop = 100
-
-window = 1
+total_time = 0.5
+on_time = 0.2
+pwm_start = 60
+pwm_stop = 30
+pwm_freq = 10000;
+window = 10
 do_median = False # otherwise mean
-do_median_mean = False
+do_median_mean = True
 
 # set up filter
 filt = Filters(window)
 
-# set up PWM
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(pwm_pin, GPIO.OUT)
-pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
-pi_pwm.start(pwm_start)
+pi_pwm = PWM(18, freq=pwm_freq)
+pi_pwm.set_dc(pwm_start)
 
 # Open a CSV file for writing
-with open(f"../data/risetime_test_{pwm_start}-{pwm_stop}.csv", "w", newline="") as file:
+with open(f"../data/riseTimeData{pwm_freq}Hz-risetime_test_{pwm_start}-{pwm_stop}.csv", "w", newline="") as file:
     writer = csv.writer(file)
 #    writer.writerow([f"PWM frequency of {pwm_frequency}"])
     writer.writerow(["Time", "ADC Reading", "Current Reading"])
@@ -51,19 +48,17 @@ with open(f"../data/risetime_test_{pwm_start}-{pwm_stop}.csv", "w", newline="") 
 
         count = adc.read(channel)        
 
-        if do_median_mean:
-            count = filt.add_data_mean_t(count)
-        elif do_median:
-            count = filt.add_data_median(count)
-        else:
-            count = filt.add_data_mean(count)
+        # if do_median_mean:
+        #     count = filt.add_data_mean_t(count)
+        # elif do_median:
+        #     count = filt.add_data_median(count)
+        # else:
+        #     count = filt.add_data_mean(count)
 
         if time.time() - t >= on_time:
-            pi_pwm.ChangeDutyCycle(pwm_stop)
+            pi_pwm.set_dc(pwm_stop)
 
         m = 0.0201
         b = -10.3652
         current = m * count + b
         writer.writerow([time.time()-t, count, current])
-
-GPIO.cleanup()

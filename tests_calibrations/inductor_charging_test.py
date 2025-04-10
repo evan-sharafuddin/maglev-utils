@@ -11,20 +11,20 @@ import mcp3008
 import time
 import csv
 import RPi.GPIO as GPIO
+from pwm import PWM
 
 from filters import Filters
 
 # Initialize ADC
 channel = 1
 adc = mcp3008.MCP3008()
-pwm_pin = 12
-pwm_frequency = 10000
+pwm_pin = PWM(18, freq=10)
 
 # set test param
 total_time = 0.5 
 on_time = 0.2
 pwm_start = 0
-pwm_stop = 100
+pwm_stop = 50
 sample_freq = 8e3
 window = 1
 do_median = False # otherwise mean
@@ -34,12 +34,11 @@ do_median_mean = False
 filt = Filters(window)
 
 # set up PWM
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(pwm_pin, GPIO.OUT)
-pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
-pi_pwm.start(pwm_start)
+#GPIO.setmode(GPIO.BOARD)
+#GPIO.setup(pwm_pin, GPIO.OUT)
+#pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
+pwm_pin.set_dc(pwm_start)
 
-pwm = 0
 # Open a CSV file for writing
 with open("../data/inductor_charging_test.csv", "w", newline="") as file:
     writer = csv.writer(file)
@@ -66,12 +65,10 @@ with open("../data/inductor_charging_test.csv", "w", newline="") as file:
             count = filt.add_data_mean(count)
 
         if time.time() - t >= on_time:
-            pi_pwm.ChangeDutyCycle(pwm_stop)
+           pwm_pin.set_dc(pwm_stop)
 #            pwm = pwm_stop
 
         m = 0.0201
         b = -10.3652
         current = m * count + b
         writer.writerow([time.time()-t, count, current])
-
-GPIO.cleanup()
