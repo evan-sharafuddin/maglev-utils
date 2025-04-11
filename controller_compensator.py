@@ -24,6 +24,7 @@ import numpy as np
 import RPi.GPIO as GPIO
 import csv
 import os
+import math
 
 integral = 0
 dc = 0
@@ -88,25 +89,25 @@ class Controller:
                  crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
     ): 
         
-        self._cout("Magnet on for two seconds", 0, info=True)
-        self.pwm.set_dc(100)
-        time.sleep(2)
-        self.pwm.set_dc(0)
-
-        # optional sleep?
-
-
 
         tstart = time.monotonic_ns()
         previous_time=time.monotonic_ns()
         tic = tstart # buffer timing
 
-        # ramp up desired position input
-        x_des = 0
+        # SET PARAMETERS HERE
+        FS = 1000 # sample frequency, changing this will change the gains for the DT compensator
+        x0 = 5
+        i0 = 0.3893
+
+        x_des = x0 # mm
+        global p_delta_x, p_delta_u
+        p_delta_u = 0
+        p_delta_x = 0
         
         if ctime == -1:
             self._cout("Press Ctrl-C to exit control loop", 0, info=True)
 
+        t_sample = time.monotonic_ns()
 
         # enter control loop 
         while ctime == -1 or time.monotonic_ns() - tic < ctime: 
@@ -123,29 +124,41 @@ class Controller:
             while i < self.buf_size:
                 data = self.adc.read( chan )
 
-                val = self.filt.add_data_mean(data) # filter readings
+                val = self.filt.add_data_mean_t(data) # filter readings
 
                 # convert counts to position
-                self._cout(f'ADC counts: {val}', 8) # TODO be careful with the row index here, look in control_iter()
-                # val = int( round(val) ) # convert to integer
-                # val = self.positions[self.adc_counts == val][0]
+                self._cout(f'ADC counts: {val}', 0)
 
-                # ramp up position command input
-                if x_des < 300: x_des += 0.5
-                # x_des = 430
-                ### UPDATE CONTROL LOOP
-                dt=(time.monotonic_ns() - previous_time)*1e-9
-                previous_time=time.monotonic_ns()
-                u = self.control_iter( val, dt, tstart, x_des=x_des )
-                
-                # convert current to PWM
-                self.pwm.set_dc(u)
+                # if at sampling time, run controller loop
+                if time.monotonic_ns() - t_sample >= 1 / FS:
+
+                    val = int( round(val) ) # convert to integer
+                    val = self.positions[self.adc_counts == val][0]
+
+                    self._cout(f'Position reading: {val}', 1)
+
+                    deltau = self.control_iter_comp(val, x_des)
+
+                    u = i0 + deltau
+                    # use linear approximation to set pwm
+                    self._cout(f'Current input: {u}', 4)
+                    
+                    # handle negative currents (and PMWs, indirectly)
+                    if u < 0: u = 0
+                    pwm = 72.489 * math.sqrt(u) # constant found using least squares
+                    
+                    # set upper bound on pwm
+                    if pwm > 100: pwm = 100
+
+                    self._cout(f'Calculated pwm: {pwm}', 5)
+
+                    self.pwm.set_dc(pwm)
 
 
-                data_buf[i] = val
-                input_buf[i] = u
-                time_buf[i] = (time.monotonic_ns() - tic)*1e-9
-                i += 1
+                # data_buf[i] = val
+                # input_buf[i] = u
+                # time_buf[i] = (time.monotonic_ns() - tic)*1e-9
+                # i += 1
 
 
             # time to fill buffers
@@ -182,6 +195,10 @@ class Controller:
 
         p_delta_x = delta_x
         p_delta_u = delta_u
+
+        self._cout(f'Delta x: {delta_x}', 2)
+        self._cout(f'Delta u: {delta_u}', 3)
+
         return delta_u
 
 
@@ -227,8 +244,8 @@ class Controller:
 
         dc = Kp*error+ Ki*integral + Kd*derivative
         #saturation
-        if dc > 100:
-            dc = 100
+        if dc > 99:
+            dc = 99
             self._cout('Max Dutycycle Reached', 2, info=True)
         elif dc < 0: 
             dc = 0
@@ -274,7 +291,7 @@ def main(stdscr):
     # info_win.refresh()
 
     ### Init controller
-    thing = Controller(10, using_curses=True, info_win=info_win, data_win=data_win)
+    thing = Controller(5, using_curses=True, info_win=info_win, data_win=data_win)
     thing.control( chan=0 ) 
 
 
