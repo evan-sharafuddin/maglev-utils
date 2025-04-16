@@ -8,7 +8,7 @@ from statistics import median
 
 class Filters:
 
-    MEDIAN_THRESH = 0.3
+    MEDIAN_THRESH = 0.05
 
     def __init__( self, list_size=5, med_threshold=True ):
         self.list = deque()

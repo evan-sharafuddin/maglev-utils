@@ -1,3 +1,5 @@
+# improvements to the reverse bounce test that make the timing more accurate
+
 import RPi.GPIO as GPIO
 
 import mcp3008
@@ -20,37 +22,27 @@ current_channel=2
 adc = mcp3008.MCP3008()
 pwm_pin = 18
 pwm_frequency = 10000
-fs = 1000
-switch_fs = 15
-switch_time = 1/switch_fs
-switch_cnt = 10
+fs = 1000 # data sampling rate
+
+period = 0.16 # number of seconds that cycle will complete
+off_time = 0.068 # time that the magnet is off
+on_time = period - off_time
+if on_time < 0: 
+   print("ERROR: off time must be smaller than period, aborting")
+   sys.exit()
+
+switch_cnt = 4
 pwm = 100
 max_pwm = 100
 min_pwm = 0
 
-# stuff for pausing between bounces 
-pause = 0.02
-turn_off_time = 0
-
-# set elapsed time
-# total_time = 0.02
-
-total_time = 2*switch_cnt/switch_fs + switch_cnt*pause
-#total_time = 1
+total_time = switch_cnt * period # add some extra time buffer for any latency
 
 counts = 0
 ii = 0
 
 switch = True
 
-
-
-#set up PWM
-# GPIO.setmode(GPIO.BOARD)
-# GPIO.setup(pwm_pin, GPIO.OUT)
-# pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
-# pi_pwm.start(100)
-# time.sleep(2)
 pipwm = PWM(pwm_pin, pwm_frequency)
 pipwm.set_dc(100)
 time.sleep(2)
@@ -67,32 +59,39 @@ filt_cur = Filters(5)
 # Open a CSV file for writing
 with open("./data/bounce_test.csv", "w", newline="") as file:
     writer = csv.writer(file)
-    writer.writerow([f"PWM frequency of {pwm_frequency}"])
-    #writer.writerow(["Time", "PWM", "ADC Reading", "Position", "Current Reading"])
+    # writer.writerow([f"PWM frequency of {pwm_frequency}"])
     writer.writerow(["Time", "PWM", "ADC Reading", "Current Reading", "Position"])
     
     t = time.time()
     sample_time = time.time()
-    switch_time = time.time()
+    
+    s_off_time = time.time()
+    s_on_time = time.time()
+    is_on = False # have it turn on first
 
     while time.time() - t <= total_time:
       
-      if time.time() - switch_time > 1/switch_fs:
-              # This will alternate between turning the driver on/off every time it samples
-        switch_time = time.time()
-        
-        if switch and time.time() - turn_off_time >pause:
-          switch = False
-          print("turn off magnet")
+      if not is_on and time.time() - s_off_time >= off_time: # time to switch on  
+        is_on = not is_on # true
+        s_on_time = time.time()
+
+      elif is_on and time.time() - s_on_time >= on_time: # time to switch off
+        is_on = not is_on # false
+        s_off_time = time.time()
+      
+      # do on or off stuff
+      if is_on:
+        if pwm != max_pwm:
+          pwm = max_pwm 
+          pipwm.set_dc(pwm)
+        # else, don't need to do anything
+      
+      else: # is_off
+        if pwm != min_pwm:
           pwm = min_pwm
           pipwm.set_dc(pwm)
-        elif not switch:
-          switch = True
-          print("turn on magnet")
-          turn_off_time=time.time()
-          pwm = max_pwm
-          pipwm.set_dc(pwm)
 
+      # sampling code
       if time.time() - sample_time > 1/fs:
         sample_time = time.time()
 
@@ -123,8 +122,8 @@ with open("./data/bounce_test.csv", "w", newline="") as file:
         # else:
         #   print(".", end = "", flush=True) 
 
-print("end test")
+print("end test -- dropping!")
 pipwm.set_dc(100)
-time.sleep(1)
+time.sleep(0.5)
 
 

@@ -1,3 +1,5 @@
+# implements pwm sine wave
+
 import RPi.GPIO as GPIO
 
 import mcp3008
@@ -20,37 +22,43 @@ current_channel=2
 adc = mcp3008.MCP3008()
 pwm_pin = 18
 pwm_frequency = 10000
-fs = 1000
-switch_fs = 15
-switch_time = 1/switch_fs
+fs = 5000 # data sampling rate
+
+period = 0.15 # number of seconds that cycle will complete
+off_time = period / 2 # time that the magnet is off
+pwm_step_time = off_time / 100 # time between stepping down the pwm
+pwm_step_size = 1 # step down size for the pwm
+
+on_time = period - off_time
+if on_time < 0: 
+   print("ERROR: off time must be smaller than period, aborting")
+   sys.exit()
+
 switch_cnt = 10
 pwm = 100
-max_pwm = 100
-min_pwm = 0
+# max_pwm = 100
+# min_pwm = 0
 
-# stuff for pausing between bounces 
-pause = 0.02
-turn_off_time = 0
-
-# set elapsed time
-# total_time = 0.02
-
-total_time = 2*switch_cnt/switch_fs + switch_cnt*pause
-#total_time = 1
-
-counts = 0
-ii = 0
+total_time = (switch_cnt + 1) * period 
 
 switch = True
 
+## CREATE SINE WAVE 
+t1 = period     # period of the sine wave (in seconds)
+t2 = 0.001     # sampling period (in seconds), i.e., 1 kHz sampling rate
+duration = total_time # total duration to show (e.g., 2 cycles)
 
+# Time array
+t = np.arange(0, duration, t2)
 
-#set up PWM
-# GPIO.setmode(GPIO.BOARD)
-# GPIO.setup(pwm_pin, GPIO.OUT)
-# pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency) 
-# pi_pwm.start(100)
-# time.sleep(2)
+# Frequency = 1 / period
+f = 1 / t1
+
+# Sine wave
+y = 50*np.cos(2 * np.pi * f * t) + 50
+# initialize pwm to be first value in the cosine wave
+pwm = y[0]
+
 pipwm = PWM(pwm_pin, pwm_frequency)
 pipwm.set_dc(100)
 time.sleep(2)
@@ -61,38 +69,39 @@ data = np.loadtxt('adc_to_position_lookup3.csv', delimiter=',')
 adc_counts = data[:, 0].astype(int)
 positions = data[:, 1]
 
-filt_ir = Filters(5)
-filt_cur = Filters(5)
+filt_ir = Filters(10)
+filt_cur = Filters(10)
 
 # Open a CSV file for writing
 with open("./data/bounce_test.csv", "w", newline="") as file:
     writer = csv.writer(file)
-    writer.writerow([f"PWM frequency of {pwm_frequency}"])
-    #writer.writerow(["Time", "PWM", "ADC Reading", "Position", "Current Reading"])
+    # writer.writerow([f"PWM frequency of {pwm_frequency}"])
     writer.writerow(["Time", "PWM", "ADC Reading", "Current Reading", "Position"])
     
     t = time.time()
     sample_time = time.time()
-    switch_time = time.time()
-
+    
+    # s_off_time = time.time()
+    # s_on_time = time.time()
+    # s_pwm_step_time = time.time() 
+    # is_on = False # have it turn on first
+    s_sine_time = time.time()
+    pipwm.set_dc(pwm)
+    sine_idx = 1 # already have taken the first value of the cosine, want to start on the second
+    
     while time.time() - t <= total_time:
-      
-      if time.time() - switch_time > 1/switch_fs:
-              # This will alternate between turning the driver on/off every time it samples
-        switch_time = time.time()
-        
-        if switch and time.time() - turn_off_time >pause:
-          switch = False
-          print("turn off magnet")
-          pwm = min_pwm
-          pipwm.set_dc(pwm)
-        elif not switch:
-          switch = True
-          print("turn on magnet")
-          turn_off_time=time.time()
-          pwm = max_pwm
-          pipwm.set_dc(pwm)
+      if time.time() - s_sine_time > t2:
+        pwm = y[sine_idx]
+        pipwm.set_dc(pwm)
+        sine_idx += 1
+        s_sine_time = time.time()
 
+        # ## UNCOMMENT FOR CONSTANT PWM
+        # pwm = 10
+        # pipwm.set_dc(pwm)
+
+
+      # sampling code
       if time.time() - sample_time > 1/fs:
         sample_time = time.time()
 
@@ -123,8 +132,8 @@ with open("./data/bounce_test.csv", "w", newline="") as file:
         # else:
         #   print(".", end = "", flush=True) 
 
-print("end test")
+print("end test -- dropping!")
 pipwm.set_dc(100)
-time.sleep(1)
+time.sleep(0.5)
 
 
