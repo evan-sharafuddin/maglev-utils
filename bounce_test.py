@@ -13,7 +13,8 @@ sys.path.append(os.path.abspath(".."))  # Add previous directory to pat
 from filters import Filters
 
 # Initialize ADC
-channel = 1
+ir_channel = 0
+curr_channel=1
 adc = mcp3008.MCP3008()
 pwm_pin = 12
 pwm_frequency = 5000
@@ -40,6 +41,8 @@ pi_pwm = GPIO.PWM(pwm_pin, pwm_frequency)
 pi_pwm.start(0)
 
 filt = Filters(10)
+
+data = np.loadtxt('adc_to_position_lookup.csv', delimiter=',', skiprows=0)  # skiprows=0 if no header
 
 # Open a CSV file for writing
 with open("./data/bounce_test.csv", "w", newline="") as file:
@@ -69,8 +72,10 @@ with open("./data/bounce_test.csv", "w", newline="") as file:
       if time.time() - sample_time > 1/fs:
         sample_time = time.time()
 
-        count = adc.read(channel)
+        count = adc.read(curr_channel)
         count = filt.add_data_mean_t(count)
+
+        ir_count = adc.read(ir_channel)
 
         # counts += adc.read(channel)
         # ii += 1

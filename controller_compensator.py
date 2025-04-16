@@ -34,7 +34,7 @@ class Controller:
                  window_size, 
                  pwm_pin=18, # NOT physical pin
                  pwm_frequency=10000, 
-                 buf_size=2000,
+                 buf_size=1000,
                  using_curses=False, 
                  info_win=None,
                  data_win=None, ):
@@ -56,14 +56,14 @@ class Controller:
         import numpy as np
 
         # Load CSV (skip header if you included one)
-        data = np.loadtxt('adc_to_position_lookup.csv', delimiter=',', skiprows=0)  # skiprows=0 if no header
+        data = np.loadtxt('adc_to_position_lookup3.csv', delimiter=',', skiprows=0)  # skiprows=0 if no header
 
         self.adc_counts = data[:, 0].astype(int)
         self.positions = data[:, 1]
         
         # create filters
         self.filt = Filters(list_size=window_size)
-
+        self._cout(f"{self.filt.thresh}", 1, True)
     """Handles curses output if using curses"""
     def _cout(self, text: str, row: int, info: bool=False):
         if self.using_curses:
@@ -96,8 +96,9 @@ class Controller:
 
         # SET PARAMETERS HERE
         FS = 1000 # sample frequency, changing this will change the gains for the DT compensator
-        x0 = 5
-        i0 = 0.3893
+        x0 = 7e-3
+        i0 = 0.5
+        pwm0 = math.sqrt(i0 * 1.9030e-4)
 
         x_des = x0 # mm
         global p_delta_x, p_delta_u
@@ -115,10 +116,15 @@ class Controller:
             data_buf = np.empty ( self.buf_size )
             input_buf = np.empty( self.buf_size )
             time_buf  = np.empty( self.buf_size )
+            pwm_buf = np.empty( self.buf_size )
+            err_buf = np.empty( self.buf_size )
 
             i = 0
             tic = time.monotonic_ns()
 
+            # initialize u and pwm
+            u = 0
+            pwm = 0
 
             # enter buffer loop
             while i < self.buf_size:
@@ -130,9 +136,11 @@ class Controller:
                 self._cout(f'ADC counts: {val}', 0)
 
                 # if at sampling time, run controller loop
-                if time.monotonic_ns() - t_sample >= 1 / FS:
+                if (time.monotonic_ns() - t_sample)*1e-9 >= 1 / FS:
 
-                    val = int( round(val) ) # convert to integer
+                    self._cout(f'Control loop actual time: {(time.monotonic_ns() - t_sample) * 1e-9}', 6)
+
+                    val = int( round(val, 1) ) # convert to integer
                     val = self.positions[self.adc_counts == val][0]
 
                     self._cout(f'Position reading: {val}', 1)
@@ -145,30 +153,33 @@ class Controller:
                     
                     # handle negative currents (and PMWs, indirectly)
                     if u < 0: u = 0
-                    pwm = 72.489 * math.sqrt(u) # constant found using least squares
+                    pwm = math.sqrt( 1.903e4 * u) # constant found using least squares
                     
                     # set upper bound on pwm
                     if pwm > 100: pwm = 100
 
                     self._cout(f'Calculated pwm: {pwm}', 5)
+                    self._cout(f'Error: {val - x_des}', 7)
 
                     self.pwm.set_dc(pwm)
 
-
-                # data_buf[i] = val
-                # input_buf[i] = u
-                # time_buf[i] = (time.monotonic_ns() - tic)*1e-9
-                # i += 1
+                    t_sample = time.monotonic_ns()
 
 
-            # time to fill buffers
-            # buf_time = time.time() - tic
+                    data_buf[i] = val
+                    input_buf[i] = u
+                    time_buf[i] = (time.monotonic_ns() - tic)*1e-9
+                    # pwm_buf[i] = pwm
+                    err_buf[i] = val - x_des
+                    i += 1
 
-            self._cout("Writing buffers...", 3, info=True)
-            np.savetxt(f"x.txt", data_buf, fmt='%f')
-            np.savetxt(f"u.txt", input_buf, fmt='%f')
-            np.savetxt(f"t.txt", time_buf, fmt='%f')
-            self._cout("Buffers written as text files!", 3, info=True)
+            # self._cout("Writing buffers...", 3, info=True)
+            # np.savetxt(f"x.txt", data_buf, fmt='%f')
+            # np.savetxt(f"u.txt", input_buf, fmt='%f')
+            # np.savetxt(f"t.txt", time_buf, fmt='%f')
+            # np.savetxt(f"pwm.txt", pwm_buf, fmt='%f')
+            # np.savetxt(f"err.txt", err_buf, fmt='%f')
+            # self._cout("Buffers written as text files!", 3, info=True)
 
             # break
 
@@ -178,20 +189,27 @@ class Controller:
         global p_delta_x, p_delta_u
 
         # controller based on sampling rate of 1000 Hz
-        #  z - 0.967      U
-        #  ----------  = ---
-        #  z - 0.6703     X
-        # \deltau[n] = 0.6703\deltau[n−1]+\deltax[n]−0.967\deltax[n−1]
-        #            = A1*\deltau[n−1]+B0*\deltax[n]−B1*\deltax[n−1]
+        #   U      A1.z - A0
+        #  --- ==> ---------
+        #   X      B1.z - B0
+
         FS = 1000
-        A0 = 1
-        A1 = 0.6703
-        B0 = 1
-        B1 = 0.967
+        K = 5000
+
+        A0 = 0.967
+        A1 = 1
+        B0 = 0.6703
+        B1 = 1
+
+        A0 *= K
+        A1 *= K
+        # B0 *= K
+        # B1 *= K
 
         # transfer function takes in measured position (mm) and outputs current input
         delta_x = x - x_des # position permutation from equilibrium
-        delta_u = A1*p_delta_u + B0*delta_x - B1*p_delta_x
+        # delta_u = A1*delta_u - A0*p_delta_u + B0*delta_x - B1*p_delta_x
+        delta_u = 1 / B1 * ( A1*delta_x - A0*p_delta_x + B0*p_delta_u )
 
         p_delta_x = delta_x
         p_delta_u = delta_u
@@ -244,8 +262,8 @@ class Controller:
 
         dc = Kp*error+ Ki*integral + Kd*derivative
         #saturation
-        if dc > 99:
-            dc = 99
+        if dc > 100:
+            dc = 100
             self._cout('Max Dutycycle Reached', 2, info=True)
         elif dc < 0: 
             dc = 0

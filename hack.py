@@ -5,7 +5,6 @@ from pwm import PWM
 import time
 import csv
 import RPi.GPIO as GPIO
-import numpy as np
 
 import sys
 import os
@@ -24,7 +23,7 @@ fs = 1000
 switch_fs = 16
 switch_time = 1/switch_fs
 switch_cnt = 4
-pwm = 100
+pwm = 0
 max_pwm = 100
 min_pwm = 0
 
@@ -56,13 +55,6 @@ pipwm.set_dc(100)
 time.sleep(2)
 print("start test")
 
-# Load CSV (skip header if you included one)
-data = np.loadtxt('adc_to_position_lookup2.csv', delimiter=',', skiprows=1)  # skiprows=0 if no header
-adc_counts = data[:, 0].astype(int)
-print(adc_counts[1:10])
-positions = data[:, 1]
-print(positions.size)
-
 
 filt = Filters(10)
 
@@ -70,7 +62,6 @@ filt = Filters(10)
 with open("./data/bounce_test.csv", "w", newline="") as file:
     writer = csv.writer(file)
     writer.writerow([f"PWM frequency of {pwm_frequency}"])
-    #writer.writerow(["Time", "PWM", "ADC Reading", "Position", "Current Reading"])
     writer.writerow(["Time", "PWM", "ADC Reading", "Current Reading"])
     
     t = time.time()
@@ -119,10 +110,6 @@ with open("./data/bounce_test.csv", "w", newline="") as file:
 
         ir_count=adc.read(ir_channel)
         ir_count = filt.add_data_mean(ir_count)
-        ir_count = int( round(ir_count) ) # convert to integer
-        print(ir_count)
-        #pos_read = positions[adc_counts == ir_count][0]
-
 
         # counts += adc.read(channel)
         # ii += 1
@@ -133,7 +120,6 @@ with open("./data/bounce_test.csv", "w", newline="") as file:
         b = -10.3652
         current = m * current_count + b
         curr_time = (time.time() - t) % 60
-        #writer.writerow([curr_time, pwm, ir_count, pos_read, current])
         writer.writerow([curr_time, pwm, ir_count, current])
 
         # if pwm % 10 == 0 and pwm != 0:

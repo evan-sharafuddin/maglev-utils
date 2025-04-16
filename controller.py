@@ -88,10 +88,10 @@ class Controller:
                  crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
     ): 
         
-        self._cout("Magnet on for two seconds", 0, info=True)
-        self.pwm.set_dc(100)
-        time.sleep(2)
-        self.pwm.set_dc(0)
+        # self._cout("Magnet on for two seconds", 0, info=True)
+        # self.pwm.set_dc(100)
+        # time.sleep(2)
+        # self.pwm.set_dc(0)
 
         # optional sleep?
 
@@ -131,8 +131,8 @@ class Controller:
                 # val = self.positions[self.adc_counts == val][0]
 
                 # ramp up position command input
-                if x_des < 300: x_des += 0.5
-                # x_des = 430
+                # if x_des < 300: x_des += 0.5
+                x_des = 900
                 ### UPDATE CONTROL LOOP
                 dt=(time.monotonic_ns() - previous_time)*1e-9
                 previous_time=time.monotonic_ns()
@@ -197,8 +197,8 @@ class Controller:
         # x_des=200
         Kp= 1
         Ki = 0.1
-        Kd = 0.005
-        INT_MAX_ABS = 10
+        Kd = 0.0001
+        INT_MAX_ABS = 1
 
         max_int = INT_MAX_ABS # prevent integrator windup
         min_int = -INT_MAX_ABS

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 x = np.loadtxt("x.txt")
 u = np.loadtxt("u.txt")
 t = np.loadtxt("t.txt")
+pwm = np.loadtxt("pwm.txt")
+err = np.loadtxt("err.txt")
 
 # Create the plot
 fig, ax1 = plt.subplots()
@@ -18,10 +20,16 @@ ax1.set_ylim([np.min(x), np.max(x)])
 
 # Create a second y-axis for u
 ax2 = ax1.twinx()
-ax2.plot(t, u, 'r--', label='u')
+ax2.plot(t, u, 'r-', label='u')
 ax2.set_ylabel('u (%)', color='r')
 ax2.tick_params(axis='y', labelcolor='r')
-ax2.set_ylim([0, 100])
+ax2.set_ylim([0, 2])
+
+ax3 = ax1.twinx()
+ax3.plot(t, err, 'g-', label='err')
+ax3.set_ylabel('err (%)', color='g')
+ax3.tick_params(axis='y', labelcolor='g')
+# ax3.set_ylim([0, 100])
 
 # Optional: Add legends
 fig.legend(loc='upper right')

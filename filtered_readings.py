@@ -41,7 +41,7 @@ parser.add_argument('-v', '--vdd_lo', action='store_true', help="Enable when MCP
 # misc arguments
 parser.add_argument('-d', '--debug', action='store_true', help="Enable debug messages")
 parser.add_argument('-y', '--dummy', action='store_true', help="Enable this to test code without RPi hardware")
-parser.add_argument('-p', '--pwm', action='store_true', help="Enable PWM output on pin 12")
+parser.add_argument('-p', '--pwm', type=int, default=0, help="Enable PWM output on pin 12")
 parser.add_argument('-f', '--file', action='store_true', help="Store data points in a file")
 
 args = parser.parse_args()
@@ -73,10 +73,10 @@ def main(stdscr):
     w_median = args.median_window
 
     # setup PWM
-    if args.pwm:
+    if args.pwm !=0:
         pwm_pin = 12
-        pwm_freq = 5000 # Hz
-        duty_cycle = 100# percent
+        pwm_freq = 10000 # Hz
+        duty_cycle = args.pwm# percent
         
         pi_pwm = PWM()
         pi_pwm.set_dc(duty_cycle)
