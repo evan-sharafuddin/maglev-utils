@@ -1,43 +1,50 @@
-#Defines a controller for the Maglev system
-
-#Currently, this is just using moving avg and median filters for position estimation, but 
-#in the future can utilize Kalman filtering or some other more advanced techniques.
-
-#TODO 
-#* define mixer to convert ADC readings to accurate position
-#""
+# NEWEST VERSION OF MAGLEV CONTROLLER
 
 # NOTE if you get this error: wmove() returned ERR
 #   try increasing the size of your terminal. Same with other curses errors, this is usually the root cause
 
-
 from mcp3008 import MCP3008
 from pwm import PWM
-from filters import Filters
-import curses
-import atexit
-import numpy as np
+from filter import Filter
 
-import time
-from collections import deque
+import curses
 import numpy as np
-import RPi.GPIO as GPIO
-import csv
-import os
+import time
 import math
 
-integral = 0
-dc = 0
+# declarations
+class Controller: pass 
+def main(): pass
+
+### SET FLAGS AND PARAM HERE ###
+F_CURSES = False # for curses display
+P_BUFSIZE = 1E4  # buffer size; choose 0 for no buffering
+
+# run file as a script
+if __name__ == '__main__':
+
+    if F_CURSES:
+        try:
+            curses.wrapper(main)
+
+        except Exception as e:
+            print(f"An error occured: {str(e)}")
+
+    else:
+        thing = Controller(5, using_curses=False)
+        thing.control( chan=0 )  
+
 
 class Controller:
     def __init__( self, 
-                 window_size, 
-                 pwm_pin=18, # NOT physical pin
-                 pwm_frequency=10000, 
-                 buf_size=1000,
-                 using_curses=False, 
-                 info_win=None,
-                 data_win=None, ):
+                  window_size, 
+                  pwm_pin=18, 
+                  pwm_frequency=10000, 
+                  buf_size=1000,
+                  using_curses=False, 
+                  info_win=None,
+                  data_win=None, 
+    ):
         
         self.window_size = window_size
         self.pwm_pin = pwm_pin
@@ -52,9 +59,6 @@ class Controller:
 
         self.pwm = PWM(pin=pwm_pin, freq=pwm_frequency)
 
-        # load adc to position lookup table
-        import numpy as np
-
         # Load CSV (skip header if you included one)
         data = np.loadtxt('adc_to_position_lookup3.csv', delimiter=',', skiprows=0)  # skiprows=0 if no header
 
@@ -62,11 +66,16 @@ class Controller:
         self.positions = data[:, 1]
         
         # create filters
-        self.filt = Filters(list_size=window_size)
-        self._cout(f"{self.filt.thresh}", 1, True)
+        self.filt = Filter(list_size=window_size, threshold=True)
+
     """Handles curses output if using curses"""
-    def _cout(self, text: str, row: int, info: bool=False):
-        if self.using_curses:
+    def _cout(self, text: str, row: int, info: bool=False, force: bool=False):
+        
+        # no-op if we are being really careful with timing
+        if not force and not self.using_curses:
+            return
+        
+        elif self.using_curses:
             if info:
                 self.info_win.move(row, 0)
                 self.info_win.clrtoeol()
@@ -78,109 +87,133 @@ class Controller:
                 self.data_win.addstr(row, 0, text) # add text to column 0
                 self.data_win.refresh()
 
-
-        else: 
+        else:
             print(text) # print to stdout
             
     """Enters loop to measure and filter position data"""
     def control( self, 
                  chan: int,               # ADC channel for measuring data (0-7)
                  ctime: int = -1,         # Time (in seconds) to run control loop, -1 for infinite loop
-                 crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
+                #  crate: int = -1,         # Control loop rate (not gaurenteed for high (kHz) frequencies)
     ): 
+
+        ### SET PARAMETERS HERE ###
+        FL = 1000 # loop frequency, changing this will change the gains for the DT compensator
+        TL = 1/FL
+        x0 = 8 * 1e-3   # [mm] -> [m], commanded equilibrium position of ball
         
+        # constants
+        K = 9.7091e-06; # [N-A^2/m^2], electromechanical constant
+        m = 0.006;      # [kg]        
+        g = 9.81        # [m/s^2]
+        R = 8           # [Ohm]
+        V_MAX = 24      # [V], approx. max voltage accross the magnet
+        PWM_MAX = 100
+        PWM_MIN = 0     # TODO around 10% DC, the current through the magnet is about zero
+        # L = 0.14485     # [H]
 
-        tstart = time.monotonic_ns()
-        previous_time=time.monotonic_ns()
-        tic = tstart # buffer timing
-
-        # SET PARAMETERS HERE
-        FS = 1000 # sample frequency, changing this will change the gains for the DT compensator
-        x0 = 7e-3
-        i0 = 0.5
-        pwm0 = math.sqrt(i0 * 1.9030e-4)
-
+        # calculate equilibrium current, voltage
+        i0 = math.sqrt( m*g*x0^2 / K ) # [A]
+        v0 = i0 * R                    # [V]
+        
+        # UNCOMMENT to prepare variables for the Lead compensator
         x_des = x0 # mm
         global p_delta_x, p_delta_u
         p_delta_u = 0
         p_delta_x = 0
+
+        # # UNCOMMENT to prepare variables for PID controller
+        # global integral, dc
+        # integral = 0
+        # dc = 0
         
         if ctime == -1:
-            self._cout("Press Ctrl-C to exit control loop", 0, info=True)
+            self._cout("Press Ctrl-C to exit control loop", 0, info=True, force=True)
 
-        t_sample = time.monotonic_ns()
+        # init timing
+        t_start  = time.monotonic_ns()
+        t_loop = time.monotonic_ns()
 
         # enter control loop 
-        while ctime == -1 or time.monotonic_ns() - tic < ctime: 
+        while ctime == -1 or time.monotonic_ns() - t_start < ctime: 
             
-            data_buf = np.empty ( self.buf_size )
-            input_buf = np.empty( self.buf_size )
-            time_buf  = np.empty( self.buf_size )
-            pwm_buf = np.empty( self.buf_size )
-            err_buf = np.empty( self.buf_size )
+            if self.buf_size > 0:
+                data_buf  = np.empty( self.buf_size )
+                input_buf = np.empty( self.buf_size )
+                time_buf  = np.empty( self.buf_size )
+                pwm_buf   = np.empty( self.buf_size )
+                err_buf   = np.empty( self.buf_size )
 
             i = 0
-            tic = time.monotonic_ns()
-
-            # initialize u and pwm
-            u = 0
-            pwm = 0
+            t_start = time.monotonic_ns() # ues for calculating time data
 
             # enter buffer loop
-            while i < self.buf_size:
+            # NOTE if buf_size <= 0, then this is an infinite loop
+            while self.buf_size <= 0 or i < self.buf_size:
+                
                 data = self.adc.read( chan )
+                reading = self.filt.add_data_mean(data) # filter readings
+                self._cout(f'ADC counts: {reading}', 0)
 
-                val = self.filt.add_data_mean_t(data) # filter readings
+                dt = ( time.monotonic_ns() - t_loop ) * 1e-9
+                if dt >= TL:
 
-                # convert counts to position
-                self._cout(f'ADC counts: {val}', 0)
+                    # check for jitter
+                    jitter_tol = TL * 1e-2 # 1% of control period
+                    if dt > TL + jitter_tol:
+                        self._cout(f'WARNING: dt of {dt} exceeds timing jitter tolerance (ideal TL = {TL})', \
+                                   2, info=True, force=True)
 
-                # if at sampling time, run controller loop
-                if (time.monotonic_ns() - t_sample)*1e-9 >= 1 / FS:
+                    self._cout(f'Control loop actual time: {(time.monotonic_ns() - t_loop) * 1e-9}', 1)
 
-                    self._cout(f'Control loop actual time: {(time.monotonic_ns() - t_sample) * 1e-9}', 6)
+                    reading_rnd = int( round(reading, 1) ) # convert to integer
+                    reading_x = self.positions[self.adc_counts == reading_rnd][0]
 
-                    val = int( round(val, 1) ) # convert to integer
-                    val = self.positions[self.adc_counts == val][0]
+                    self._cout(f'Position reading: {reading_x}', 2)
 
-                    self._cout(f'Position reading: {val}', 1)
+                    # updates disp lines 3 and 4
+                    delta_u = self.control_iter_comp(reading_x, x_des)
 
-                    deltau = self.control_iter_comp(val, x_des)
+                    u = v0 + delta_u # calculate voltage, sum together equilib. and offset
+                    self._cout(f'Voltage input: {u}', 5)
 
-                    u = i0 + deltau
-                    # use linear approximation to set pwm
-                    self._cout(f'Current input: {u}', 4)
+                    # map voltage to PWM
+                    # TODO make sure to verify this relationship is linear wrt PWM DC
+                    pwm = u / V_MAX * (PWM_MAX - PWM_MIN) + PWM_MIN # accounts for nonzero PWM minimum
                     
-                    # handle negative currents (and PMWs, indirectly)
-                    if u < 0: u = 0
-                    pwm = math.sqrt( 1.903e4 * u) # constant found using least squares
-                    
-                    # set upper bound on pwm
-                    if pwm > 100: pwm = 100
+                    if pwm > PWM_MAX: 
+                        pwm = PWM_MAX
+                        self._cout('Max DC reached', 1, info=True)
+                    elif pwm < PWM_MIN: 
+                        pwm = PWM_MIN
+                        self._cout('Min DC reached', 1, info=True)
+                    else:
+                        self._cout('', 1, info=True)
 
-                    self._cout(f'Calculated pwm: {pwm}', 5)
-                    self._cout(f'Error: {val - x_des}', 7)
+                    self._cout(f'Calculated pwm: {pwm}', 6)
+                    self._cout(f'Position error: {reading_x - x_des}', 7)
 
                     self.pwm.set_dc(pwm)
+                    t_loop = time.monotonic_ns()
 
-                    t_sample = time.monotonic_ns()
+                    if self.buf_size > 0:
+                        data_buf[i]  = reading_x
+                        input_buf[i] = u
+                        time_buf[i]  = (time.monotonic_ns() - t_start)*1e-9
+                        pwm_buf[i]   = pwm
+                        err_buf[i]   = reading_x - x_des
+                        i += 1
 
+            # NOTE if you are not buffering, this code will never be reached
+            self._cout("Writing buffers...", 3, info=True)
+            np.savetxt(f"x.txt", data_buf, fmt='%f')
+            np.savetxt(f"u.txt", input_buf, fmt='%f')
+            np.savetxt(f"t.txt", time_buf, fmt='%f')
+            np.savetxt(f"pwm.txt", pwm_buf, fmt='%f')
+            np.savetxt(f"err.txt", err_buf, fmt='%f')
+            self._cout("Buffers written as text files!", 3, info=True)
 
-                    data_buf[i] = val
-                    input_buf[i] = u
-                    time_buf[i] = (time.monotonic_ns() - tic)*1e-9
-                    # pwm_buf[i] = pwm
-                    err_buf[i] = val - x_des
-                    i += 1
-
-            # self._cout("Writing buffers...", 3, info=True)
-            # np.savetxt(f"x.txt", data_buf, fmt='%f')
-            # np.savetxt(f"u.txt", input_buf, fmt='%f')
-            # np.savetxt(f"t.txt", time_buf, fmt='%f')
-            # np.savetxt(f"pwm.txt", pwm_buf, fmt='%f')
-            # np.savetxt(f"err.txt", err_buf, fmt='%f')
-            # self._cout("Buffers written as text files!", 3, info=True)
-
+            # # UNCOMMENT if you only want to save one buffer and then abort
             # break
 
     """Calculates control input using discretized feedforward controller"""
@@ -192,9 +225,10 @@ class Controller:
         #   U      A1.z - A0
         #  --- ==> ---------
         #   X      B1.z - B0
+        # NOTE X = measured position offset from equilibrium
+        #      U = control voltage to apply to the electromagnet
 
-        FS = 1000
-        K = 5000
+        K = 6.36e3
 
         A0 = 0.967
         A1 = 1
@@ -203,19 +237,16 @@ class Controller:
 
         A0 *= K
         A1 *= K
-        # B0 *= K
-        # B1 *= K
 
-        # transfer function takes in measured position (mm) and outputs current input
+        # transfer function takes in measured position [m] and outputs voltage input [V]
         delta_x = x - x_des # position permutation from equilibrium
-        # delta_u = A1*delta_u - A0*p_delta_u + B0*delta_x - B1*p_delta_x
         delta_u = 1 / B1 * ( A1*delta_x - A0*p_delta_x + B0*p_delta_u )
 
         p_delta_x = delta_x
         p_delta_u = delta_u
 
-        self._cout(f'Delta x: {delta_x}', 2)
-        self._cout(f'Delta u: {delta_u}', 3)
+        self._cout(f'Delta x [m]: {delta_x}', 3)
+        self._cout(f'Delta u [V]: {delta_u}', 4)
 
         return delta_u
 
@@ -223,7 +254,7 @@ class Controller:
     """Use to calculate the control input given a measured state"""
     #should output duty cycle
     def control_iter( self,
-                     x: float, dt: float, tstart: float, x_des: float) -> float:
+                     x: float, dt: float, t_start: float, x_des: float) -> float:
         global integral, dc
     
         #lets say we want to keep the ball between the IR sensors. We want to keep adc reading to zero. 
@@ -264,28 +295,19 @@ class Controller:
         #saturation
         if dc > 100:
             dc = 100
-            self._cout('Max Dutycycle Reached', 2, info=True)
+            self._cout('Max Dutycycle Reached', 1, info=True)
         elif dc < 0: 
             dc = 0
-            self._cout('Min Dutycycle Reached', 2, info=True)
+            self._cout('Min Dutycycle Reached', 1, info=True)
         else:
-            self._cout('', 2, info=True)
+            self._cout('', 1, info=True)
 
         self._cout(f"Position sensor reading: {x}", 0)
-
         self._cout(f"Duty cycle input: {dc}", 1)
         
-        
-        # filename = 'save_data.csv'
-        # file_exists = os.path.isfile(filename)
-        # with open(filename, mode="a", newline='') as file:
-        #   writer = csv.writer(file)
-        #   if not file_exists:
-        #       writer.writerow(["Time", "Dutycycle", "Position", "Error"])
-        #   writer.writerow([f"{time.time() - tstart}", dc , x, error])
         return dc
 
-# for testing purposes
+# Curses window
 def main(stdscr):
     
     ### Boilerplate setup
@@ -311,15 +333,3 @@ def main(stdscr):
     ### Init controller
     thing = Controller(5, using_curses=True, info_win=info_win, data_win=data_win)
     thing.control( chan=0 ) 
-
-
-if __name__ == '__main__':
-    try:
-        curses.wrapper(main)
-
-    # # must print error messages outside of the curses wrapper
-    # except SystemExit as e:
-    #     print()
-
-    except Exception as e:
-        print(f"An error occured: {str(e)}")
