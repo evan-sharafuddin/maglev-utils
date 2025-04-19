@@ -12,28 +12,10 @@ import numpy as np
 import time
 import math
 
-# declarations
-class Controller: pass 
-def main(): pass
-
 ### SET FLAGS AND PARAM HERE ###
 F_CURSES = False # for curses display
-P_BUFSIZE = 1E4  # buffer size; choose 0 for no buffering
-
-# run file as a script
-if __name__ == '__main__':
-
-    if F_CURSES:
-        try:
-            curses.wrapper(main)
-
-        except Exception as e:
-            print(f"An error occured: {str(e)}")
-
-    else:
-        thing = Controller(5, using_curses=False)
-        thing.control( chan=0 )  
-
+P_BUFSIZE = 50000 # buffer size; choose 0 for no buffering
+P_WINSIZE = 5 # averaging window size
 
 class Controller:
     def __init__( self, 
@@ -100,11 +82,11 @@ class Controller:
         ### SET PARAMETERS HERE ###
         FL = 1000 # loop frequency, changing this will change the gains for the DT compensator
         TL = 1/FL
-        x0 = 8 * 1e-3   # [mm] -> [m], commanded equilibrium position of ball
+        x0 = 6 * 1e-3   # [mm] -> [m], commanded equilibrium position of ball
         
         # constants
-        K = 9.7091e-06; # [N-A^2/m^2], electromechanical constant
-        m = 0.006;      # [kg]        
+        K = 9.7091e-06  # [N-A^2/m^2], electromechanical constant
+        m = 0.006       # [kg]        
         g = 9.81        # [m/s^2]
         R = 8           # [Ohm]
         V_MAX = 24      # [V], approx. max voltage accross the magnet
@@ -113,7 +95,7 @@ class Controller:
         # L = 0.14485     # [H]
 
         # calculate equilibrium current, voltage
-        i0 = math.sqrt( m*g*x0^2 / K ) # [A]
+        i0 = math.sqrt( m*g*x0**2 / K ) # [A]
         v0 = i0 * R                    # [V]
         
         # UNCOMMENT to prepare variables for the Lead compensator
@@ -147,29 +129,30 @@ class Controller:
             i = 0
             t_start = time.monotonic_ns() # ues for calculating time data
 
+            # initialize other values
+            pwm, u = 0, 0
+
             # enter buffer loop
             # NOTE if buf_size <= 0, then this is an infinite loop
-            while self.buf_size <= 0 or i < self.buf_size:
+            while self.buf_size <= 0 or i < self.buf_size * 2:
                 
                 data = self.adc.read( chan )
                 reading = self.filt.add_data_mean(data) # filter readings
+                reading_rnd = int( round(reading, 1) ) # convert to integer
+                reading_x = self.positions[self.adc_counts == reading_rnd][0]
                 self._cout(f'ADC counts: {reading}', 0)
+                self._cout(f'Position reading: {reading_x}', 2)
 
                 dt = ( time.monotonic_ns() - t_loop ) * 1e-9
                 if dt >= TL:
 
                     # check for jitter
-                    jitter_tol = TL * 1e-2 # 1% of control period
+                    jitter_tol = TL * 1e-1 # 5% of control period
                     if dt > TL + jitter_tol:
                         self._cout(f'WARNING: dt of {dt} exceeds timing jitter tolerance (ideal TL = {TL})', \
                                    2, info=True, force=True)
 
                     self._cout(f'Control loop actual time: {(time.monotonic_ns() - t_loop) * 1e-9}', 1)
-
-                    reading_rnd = int( round(reading, 1) ) # convert to integer
-                    reading_x = self.positions[self.adc_counts == reading_rnd][0]
-
-                    self._cout(f'Position reading: {reading_x}', 2)
 
                     # updates disp lines 3 and 4
                     delta_u = self.control_iter_comp(reading_x, x_des)
@@ -196,25 +179,30 @@ class Controller:
                     self.pwm.set_dc(pwm)
                     t_loop = time.monotonic_ns()
 
-                    if self.buf_size > 0:
-                        data_buf[i]  = reading_x
-                        input_buf[i] = u
-                        time_buf[i]  = (time.monotonic_ns() - t_start)*1e-9
-                        pwm_buf[i]   = pwm
-                        err_buf[i]   = reading_x - x_des
-                        i += 1
+                if self.buf_size > 0 and i % 2 == 0:
+                    j = int(i / 2)
+                    data_buf[j]  = reading_x
+                    input_buf[j] = u
+                    time_buf[j]  = (time.monotonic_ns() - t_start)*1e-9
+                    pwm_buf[j]   = pwm
+                    err_buf[j]   = reading_x - x_des
+                i += 1
 
             # NOTE if you are not buffering, this code will never be reached
             self._cout("Writing buffers...", 3, info=True)
-            np.savetxt(f"x.txt", data_buf, fmt='%f')
-            np.savetxt(f"u.txt", input_buf, fmt='%f')
-            np.savetxt(f"t.txt", time_buf, fmt='%f')
-            np.savetxt(f"pwm.txt", pwm_buf, fmt='%f')
-            np.savetxt(f"err.txt", err_buf, fmt='%f')
+            # np.savetxt(f"x.txt", data_buf, fmt='%f')
+            # np.savetxt(f"u.txt", input_buf, fmt='%f')
+            # np.savetxt(f"t.txt", time_buf, fmt='%f')
+            # np.savetxt(f"pwm.txt", pwm_buf, fmt='%f')
+            # np.savetxt(f"err.txt", err_buf, fmt='%f')
+            # Stack them column-wise
+            combined = np.column_stack((time_buf, input_buf, pwm_buf, data_buf, err_buf))
+            header = 'time,input,pwm,data,err'
+            np.savetxt("controller_output.csv", combined, delimiter=",", header=header, comments='', fmt='%.6f')
             self._cout("Buffers written as text files!", 3, info=True)
 
-            # # UNCOMMENT if you only want to save one buffer and then abort
-            # break
+            # UNCOMMENT if you only want to save one buffer and then abort
+            break
 
     """Calculates control input using discretized feedforward controller"""
     def control_iter_comp( self, x, x_des ):
@@ -228,11 +216,12 @@ class Controller:
         # NOTE X = measured position offset from equilibrium
         #      U = control voltage to apply to the electromagnet
 
-        K = 6.36e3
-
+        K = 2.075e4
         A0 = 0.967
+        # A0 = 0.985
         A1 = 1
         B0 = 0.6703
+        # B0 = 0.66
         B1 = 1
 
         A0 *= K
@@ -333,3 +322,17 @@ def main(stdscr):
     ### Init controller
     thing = Controller(5, using_curses=True, info_win=info_win, data_win=data_win)
     thing.control( chan=0 ) 
+
+# run file as a script
+if __name__ == '__main__':
+
+    if F_CURSES:
+        try:
+            curses.wrapper(main)
+
+        except Exception as e:
+            print(f"An error occured: {str(e)}")
+
+    else:
+        thing = Controller(window_size=P_WINSIZE, using_curses=False, buf_size=P_BUFSIZE)
+        thing.control( chan=0 )  
