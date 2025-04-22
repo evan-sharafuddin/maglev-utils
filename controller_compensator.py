@@ -11,11 +11,36 @@ import curses
 import numpy as np
 import time
 import math
+import argparse
+
+# set up command line arguments
+msg = "Uses feedback controller with lead compensator to control MagLev System"
+parser = argparse.ArgumentParser(description=msg)
+
+parser.add_argument('-t', type=int, default=0, help="Number of seconds to wait until start data buffering")
+parser.add_argument('-b', type=float, default=-1, help="Size of buffer to store data. Enter zero to have no buffering")
+parser.add_argument('-w', type=int, default=7, help="Moving average window size")
+parser.add_argument('-l', type=float, default=1e3, help="Control loop frequency. Beware of going above 1 kHz")
+parser.add_argument('-g', type=float, default=2.05e4, help="Feedback proportional gain")
+
+args = parser.parse_args()
 
 ### SET FLAGS AND PARAM HERE ###
+global K, FL, A0, A1, B0, B1
 F_CURSES = False # for curses display
-P_BUFSIZE = 50000 # buffer size; choose 0 for no buffering
-P_WINSIZE = 5 # averaging window size
+P_BUFSIZE = int(args.b) # buffer size; choose 0 for no buffering
+P_WINSIZE = args.w # averaging window size
+K = args.g
+FL = args.l
+
+A0 = 0.967
+A1 = 1
+B0 = 0.6703
+B1 = 1
+A0 *= K
+A1 *= K
+
+
 
 class Controller:
     def __init__( self, 
@@ -80,22 +105,23 @@ class Controller:
     ): 
 
         ### SET PARAMETERS HERE ###
-        FL = 1000 # loop frequency, changing this will change the gains for the DT compensator
+        # FL = 1000 # loop frequency, changing this will change the gains for the DT compensator
+        global FL
         TL = 1/FL
         x0 = 6 * 1e-3   # [mm] -> [m], commanded equilibrium position of ball
         
         # constants
-        K = 9.7091e-06  # [N-A^2/m^2], electromechanical constant
+        Kk = 9.7091e-06  # [N-A^2/m^2], electromechanical constant
         m = 0.006       # [kg]        
         g = 9.81        # [m/s^2]
-        R = 8           # [Ohm]
+        R = 8        # [Ohm]
         V_MAX = 24      # [V], approx. max voltage accross the magnet
         PWM_MAX = 100
         PWM_MIN = 0     # TODO around 10% DC, the current through the magnet is about zero
         # L = 0.14485     # [H]
 
         # calculate equilibrium current, voltage
-        i0 = math.sqrt( m*g*x0**2 / K ) # [A]
+        i0 = math.sqrt( m*g*x0**2 / Kk ) # [A]
         v0 = i0 * R                    # [V]
         
         # UNCOMMENT to prepare variables for the Lead compensator
@@ -147,7 +173,7 @@ class Controller:
                 if dt >= TL:
 
                     # check for jitter
-                    jitter_tol = TL * 1e-1 # 5% of control period
+                    jitter_tol = TL * 1e-1 # 10% of control period
                     if dt > TL + jitter_tol:
                         self._cout(f'WARNING: dt of {dt} exceeds timing jitter tolerance (ideal TL = {TL})', \
                                    2, info=True, force=True)
@@ -159,11 +185,10 @@ class Controller:
 
                     u = v0 + delta_u # calculate voltage, sum together equilib. and offset
                     self._cout(f'Voltage input: {u}', 5)
-
                     # map voltage to PWM
                     # TODO make sure to verify this relationship is linear wrt PWM DC
                     pwm = u / V_MAX * (PWM_MAX - PWM_MIN) + PWM_MIN # accounts for nonzero PWM minimum
-                    
+    
                     if pwm > PWM_MAX: 
                         pwm = PWM_MAX
                         self._cout('Max DC reached', 1, info=True)
@@ -198,7 +223,7 @@ class Controller:
             # Stack them column-wise
             combined = np.column_stack((time_buf, input_buf, pwm_buf, data_buf, err_buf))
             header = 'time,input,pwm,data,err'
-            np.savetxt("controller_output.csv", combined, delimiter=",", header=header, comments='', fmt='%.6f')
+            np.savetxt("controller_output_22.csv", combined, delimiter=",", header=header, comments='', fmt='%.6f')
             self._cout("Buffers written as text files!", 3, info=True)
 
             # UNCOMMENT if you only want to save one buffer and then abort
@@ -216,16 +241,7 @@ class Controller:
         # NOTE X = measured position offset from equilibrium
         #      U = control voltage to apply to the electromagnet
 
-        K = 2.075e4
-        A0 = 0.967
-        # A0 = 0.985
-        A1 = 1
-        B0 = 0.6703
-        # B0 = 0.66
-        B1 = 1
-
-        A0 *= K
-        A1 *= K
+        global K, A0, A1, B0, B1
 
         # transfer function takes in measured position [m] and outputs voltage input [V]
         delta_x = x - x_des # position permutation from equilibrium
